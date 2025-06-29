@@ -98,5 +98,10 @@ If you see warnings about `abnumber`, it simply means Kabat numbering could not 
 
 MIT License
 
+
+## todo
+1. Other models to add: ESM-2, AntiBERTy, ProGen2, ESM-IF, ProteinMPNN
+2. Consensus recommender Combine log-likelihood scores from multiple models (e.g., ablang2 + ESM-2 + AntiBERTy) to recommend the top-20 mutations with consensus support. For example, rank mutations by average delta-log-likelihood across models, or use a weighted voting scheme.
+3. Batch parallel scoring: Extend the script to process thousands of VH/VL pairs in parallel for higher-throughput workflows.
 ---
 
