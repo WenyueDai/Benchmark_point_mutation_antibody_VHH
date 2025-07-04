@@ -38,21 +38,12 @@ If you do not have `abnumber`, the script will still run but fall back to simple
 python ablang2_paired_scorer.py input.csv -o output.tsv
 ```
 
-**Arguments:**
-
-* `input.csv` : A CSV file with columns:
-
-  * `name`: sample name
-  * `vh`: VH sequence
-  * `vl`: VL sequence
-* `-o / --output`: Optional path to write a TSV output file (default: prints to stdout)
-
 **Example `input.csv`:**
 
 ```csv
-name,vh,vl
-sample1,EVQLVESGGGLVQPGGSLRLSCAASGFT...,DIQMTQSPSSLSASVGDRVTITC...
-sample2,QVQLVQSGAEVKKPGASVKVSCKASGYT...,SYVLTQTPSSLSASVGDRVTITC...
+name,format,vh,vl
+sample1,VHVL,EVQLVESGGGLVQPGGSLRLSCAASGFT...,DIQMTQSPSSLSASVGDRVTITC...
+sample2,VHVL,QVQLVQSGAEVKKPGASVKVSCKASGYT...,SYVLTQTPSSLSASVGDRVTITC...
 ```
 
 ---
