@@ -1,0 +1,1 @@
+1. Antifold env is installed based on github, and also conda install -c conda-forge gemmi to convert pdb to cif
