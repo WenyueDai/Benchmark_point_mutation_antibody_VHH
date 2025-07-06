@@ -1,6 +1,8 @@
+(Keep updating 20250706)
+
 # Paired\_scorer
 
-**Paired\_scorer** is a Python script for scoring mutations in paired VH and VL antibody sequences using different models. It provides per-position log-likelihood changes for all 20 standard amino acids in both chains, and supports Kabat numbering via `abnumber` if available.
+**Paired\_scorer** is a Python script for scoring mutations in paired VH and VL antibody sequences using different models (ablang2, antifold, esm2, esm1f, antiberty). It provides per-position log-likelihood changes for all 20 standard amino acids in both chains, and supports Kabat numbering via `abnumber` if available.
 
 ---
 
@@ -22,21 +24,6 @@
 * [ablang2](https://github.com/oxpig/ablang2)
 * [abnumber](https://github.com/oxpig/abnumber) (optional, for Kabat numbering)
 
-You can install the dependencies via:
-
-```bash
-pip install pandas torch ablang2 abnumber
-```
-
-If you do not have `abnumber`, the script will still run but fall back to simple 1-based indexing.
-
----
-
-## Usage
-
-```bash
-python ablang2_paired_scorer.py input.csv -o output.tsv
-```
 
 **Example `input.csv`:**
 
