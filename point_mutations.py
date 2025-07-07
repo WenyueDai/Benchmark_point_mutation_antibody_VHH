@@ -23,7 +23,7 @@ AAs = "IVLCMAGTSWYPHEQDNKR"
 
 # CONFIG
 MODE = "vhh"   # auto, vhh, mab
-MODEL_TYPE = "antiberta"  # ablang, esm2, esm1f, antiberta, antifold
+MODEL_TYPE = "antifold"  # ablang, esm2, esm1f, antiberta, antifold
 INPUT_CSV = "/home/eva/0_point_mutation/results/TheraSAbDab_SeqStruc_OnlineDownload.csv"
 OUTPUT = f"/home/eva/0_point_mutation/results/{MODEL_TYPE}/{MODE}_{MODEL_TYPE}.csv"
 PDB_OUTPUT_DIR = "/home/eva/0_point_mutation/pdbs"
@@ -111,11 +111,20 @@ def run_abodybuilder2(vh_seq, vl_seq, output_path):
 def mutation_scan_paired(antiberty, vh_seq, vl_seq=None, batch_size=16):
     """
     For a given VH (and optional VL), systematically mutate each residue
-    to each of the other 19 amino acids and calculate PLL, in *batches*.
-    Returns a dataframe with chain/pos/wt/mt/pll.
+    to each of the other 19 amino acids, calculate PLLs,
+    and also store delta PLL compared to the wildtype.
     """
     AAs = "IVLCMAGTSWYPHEQDNKR"
     records = []
+
+    # get PLL for wild-type
+    wt_seqs = [vh_seq]
+    chains = ["H"]
+    if vl_seq:
+        wt_seqs.append(vl_seq)
+        chains.append("L")
+    wt_plls = antiberty.pseudo_log_likelihood(wt_seqs, batch_size=1)
+    wt_pll_dict = dict(zip(chains, [pll.item() for pll in wt_plls]))
 
     # VH mutations
     vh_mutants = []
@@ -125,49 +134,56 @@ def mutation_scan_paired(antiberty, vh_seq, vl_seq=None, batch_size=16):
             if mt == wt:
                 continue
             mutated_vh = vh_seq[:pos] + mt + vh_seq[pos+1:]
-            if vl_seq:
-                vh_mutants.append([mutated_vh, vl_seq])
-            else:
-                vh_mutants.append([mutated_vh])
-            vh_info.append( ("H", pos+1, wt, mt) )
+            vh_mutants.append([mutated_vh] if not vl_seq else [mutated_vh, vl_seq])
+            vh_info.append(("H", pos+1, wt, mt))
 
-    # flatten VH pairs
+    # flatten
     vh_flat = []
     for pair in vh_mutants:
         vh_flat.extend(pair)
     vh_plls = antiberty.pseudo_log_likelihood(vh_flat, batch_size=batch_size)
+
     for idx, info in enumerate(vh_info):
+        chain = info[0]
+        wt_pll = wt_pll_dict[chain]
+        mut_pll = vh_plls[idx].item()
+        delta = mut_pll - wt_pll
         records.append({
-            "chain": info[0],
+            "chain": chain,
             "pos": info[1],
             "wt": info[2],
             "mt": info[3],
-            "pll": vh_plls[idx].item()
+            "pll_mutant": mut_pll,
+            "pll_wildtype": wt_pll,
+            "delta_pll": delta
         })
 
-    # VL mutations if present
+    # VL
     if vl_seq:
         vl_mutants = []
         vl_info = []
         for pos, wt in enumerate(vl_seq):
             for mt in AAs:
-                if mt == wt:
-                    continue
                 mutated_vl = vl_seq[:pos] + mt + vl_seq[pos+1:]
                 vl_mutants.append([vh_seq, mutated_vl])
-                vl_info.append( ("L", pos+1, wt, mt) )
-
+                vl_info.append(("L", pos+1, wt, mt))
         vl_flat = []
         for pair in vl_mutants:
             vl_flat.extend(pair)
         vl_plls = antiberty.pseudo_log_likelihood(vl_flat, batch_size=batch_size)
         for idx, info in enumerate(vl_info):
+            chain = info[0]
+            wt_pll = wt_pll_dict[chain]
+            mut_pll = vl_plls[idx].item()
+            delta = mut_pll - wt_pll
             records.append({
-                "chain": info[0],
+                "chain": chain,
                 "pos": info[1],
                 "wt": info[2],
                 "mt": info[3],
-                "pll": vl_plls[idx].item()
+                "pll_mutant": mut_pll,
+                "pll_wildtype": wt_pll,
+                "delta_pll": delta
             })
 
     return pd.DataFrame(records)
@@ -237,27 +253,16 @@ def main():
                 # run mutation scan for both nanobody or mab
                 print(f"Running mutation scan on {name}...")
                 mut_df = mutation_scan_paired(antiberty, vh, vl if vl else None, batch_size=16)
+                mut_df = mut_df.rename(columns={
+                    "pll_mutant": f"mut_log_likelihood_{MODEL_TYPE}",
+                    "pll_wildtype": f"wt_log_likelihood_{MODEL_TYPE}",
+                    "delta_pll": f"delta_log_likelihood_{MODEL_TYPE}"
+                })
                 mut_df["sample"] = name
-                mut_csv = f"/home/eva/0_point_mutation/results/{MODEL_TYPE}/{name}_mutation_scan.csv"
-                mut_df.to_csv(mut_csv, index=False)
-                print(f"Mutation scan saved to {mut_csv}")
-
-
-                records = []
-                for chain_id, seq, pll in zip(chains, seqs, pll_scores):
-                    records.append((chain_id, len(seq), pll.item(), name))
-
-                tidy_df = pd.DataFrame(records, columns=[
-                    "chain", "sequence_length",
-                    "pseudo_log_likelihood_antiberty",
-                    "sample"
-                ])
-
                 if not os.path.exists(OUTPUT):
-                    tidy_df.to_csv(OUTPUT, sep="\t", index=False)
+                    mut_df.to_csv(OUTPUT, sep="\t", index=False)
                 else:
-                    tidy_df.to_csv(OUTPUT, sep="\t", mode="a", header=False, index=False)
-
+                    mut_df.to_csv(OUTPUT, sep="\t", mode="a", header=False, index=False)
                 print(f"Wrote results for {name} to {OUTPUT}")
 
             except Exception as e:
