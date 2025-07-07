@@ -46,3 +46,12 @@ print(pll)
 To use AntiBERTy to calculate the pseudo log-likelihood of a sequence, use the pseudo_log_likelihood function. The pseudo log-likelihood of a sequence is calculated as the average of per-residue masked log-likelihoods. The output is a list of pseudo log-likelihoods, corresponding to the input sequences.
 Caplacizumab  -> -1.02
 This means “on average, when masking each position one at a time, the model could reconstruct the original with PLL -1.02.”
+
+Nanobert
+conda activate antiberty
+pip install protobuf
+conda install -c conda-forge protobuf
+
+from huggingface_hub import snapshot_download
+snapshot_download("NaturalAntibody/nanoBERT")
+ls ~/.cache/huggingface/hub/

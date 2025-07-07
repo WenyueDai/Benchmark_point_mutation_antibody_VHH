@@ -19,9 +19,12 @@ except Exception:
     _NUMBERING_OK = False
     print("WARNING: abnumber not available, fallback to simple positions")
 
-# CONFIG
+# =============================
+# CONFIGURATION
+# =============================
 MODE = "vhh"   # auto (for all), vhh, mab
-MODEL_TYPE = "esm1f"  # ablang, esm2, esm1f, antiberta, antifold
+MODEL_TYPE = "nanobert"  # ablang, esm2, esm1f, antiberta, antifold, nanobert(for nanobody only)
+
 INPUT_CSV = "/home/eva/0_point_mutation/results/TheraSAbDab_SeqStruc_OnlineDownload.csv"
 OUTPUT = f"/home/eva/0_point_mutation/results/{MODEL_TYPE}/{MODE}_{MODEL_TYPE}.csv"
 PDB_OUTPUT_DIR = "/home/eva/0_point_mutation/pdbs"
@@ -31,6 +34,9 @@ os.makedirs(os.path.dirname(OUTPUT), exist_ok=True)
 os.makedirs(PDB_OUTPUT_DIR, exist_ok=True)
 os.makedirs(ANTIFOLD_OUTPUT_DIR, exist_ok=True)
 
+# =============================
+# MODEL LOADERS
+# =============================
 
 def load_model(format_type, model_type):
     if model_type == "ablang":
@@ -42,6 +48,9 @@ def load_model(format_type, model_type):
         return model
     return None
 
+# =============================
+# ABLANG SCORER
+# =============================
 
 def score_paired(vh_seq, vl_seq, model, format_type, model_type, sample_name=None):
     """
@@ -124,6 +133,9 @@ def score_paired(vh_seq, vl_seq, model, format_type, model_type, sample_name=Non
 
     return pd.DataFrame.from_records(records)
 
+# =============================
+# ABodyBuilder
+# =============================
 
 def run_abodybuilder2(vh_seq, vl_seq, output_path):
     from ImmuneBuilder import ABodyBuilder2, NanoBodyBuilder2
@@ -136,6 +148,9 @@ def run_abodybuilder2(vh_seq, vl_seq, output_path):
     model.save(output_path)
     print(f"Saved structure to {output_path}")
 
+# =============================
+# ANTI-BERTY MUT SCAN
+# =============================
 
 def mutation_scan_paired(antiberty, vh_seq, vl_seq=None, batch_size=16):
     """
@@ -212,23 +227,24 @@ def mutation_scan_paired(antiberty, vh_seq, vl_seq=None, batch_size=16):
 
     return pd.DataFrame(records)
 
-
+# =============================
+# MAIN
+# =============================
 def main():
     data = pd.read_csv(INPUT_CSV)
-
     if MODE == "vhh":
-        data = data[data["Format"].str.lower().str.contains("nanobody|vhh", na=False)].copy()
-        print(f"Filtered data to {len(data)} nanobody entries in vhh mode.")
+        data = data[data["Format"].str.lower().str.contains("nanobody|vhh", na=False)]
+        print(f"Filtered to {len(data)} entries in vhh mode.")
 
     if data.empty:
         print("No samples to process after filtering.")
         return
 
-    print(f"\n=== Running {MODEL_TYPE} ===")
+    print(f"\n=== Running MODEL_TYPE: {MODEL_TYPE} ===")
 
     if MODEL_TYPE == "antiberta":
         if AntiBERTyRunner is None:
-            print("ERROR: AntiBERTy is not installed.")
+            print("ERROR: AntiBERTy not installed.")
             return
         antiberty = AntiBERTyRunner()
         print(f"Loaded AntiBERTy on {antiberty.device}")
@@ -241,7 +257,6 @@ def main():
         vl = row["vl"].upper() if "vl" in row and pd.notna(row["vl"]) else ""
         format_str = str(row["Format"]).lower()
 
-        # standardize
         if MODE == "auto":
             if "nanobody" in format_str or "vhh" in format_str:
                 format_type = "Nanobody"
@@ -254,18 +269,17 @@ def main():
         elif MODE == "mab":
             format_type = "VHVL"
         else:
-            raise ValueError("bad MODE")
+            raise ValueError("Invalid MODE")
 
-        print(f"  -> [{sample_idx}/{len(data)}] Processing {name}...")
+        print(f"[{sample_idx}/{len(data)}] Processing {name} ({format_type})...")
 
         if MODEL_TYPE == "antiberta":
             try:
                 seqs = [vh] if format_type == "Nanobody" else [vh, vl]
                 if format_type == "VHVL" and (not vl or vl == "NA"):
-                    print(f"Skipping {name}: missing VL for VHVL mode")
+                    print(f"Skipping {name}: missing VL sequence")
                     continue
                 pll_scores = antiberty.pseudo_log_likelihood(seqs, batch_size=1)
-
                 print(f"Running mutation scan on {name}...")
                 mut_df = mutation_scan_paired(antiberty, vh, vl if vl else None, batch_size=16)
                 mut_df = mut_df.rename(columns={
@@ -275,12 +289,12 @@ def main():
                 })
                 mut_df["sample"] = name
                 mut_df.to_csv(OUTPUT, sep="\t", mode="a", header=not os.path.exists(OUTPUT), index=False)
-                print(f"Wrote results for {name} to {OUTPUT}")
+                print(f"Results for {name} written to {OUTPUT}")
             except Exception as e:
                 print(f"Failed on {name}: {e}")
                 continue
 
-        elif MODEL_TYPE in ["antifold", "esm2", "esm1f"]:
+        elif MODEL_TYPE in ["antifold", "esm2", "esm1f", "nanobert"]:
             try:
                 if MODEL_TYPE == "antifold":
                     pdbfile = os.path.join(PDB_OUTPUT_DIR, f"{name}.pdb")
@@ -292,6 +306,13 @@ def main():
                         "conda", "run", "-n", env_name, "python", worker_script,
                         name, PDB_OUTPUT_DIR, ANTIFOLD_OUTPUT_DIR, format_type
                     ]
+                elif MODEL_TYPE == "nanobert":
+                    worker_script = "nanobert_worker.py"
+                    env_name = "antiberty"
+                    worker_args = [
+                        "conda", "run", "-n", env_name, "python", worker_script,
+                        name, vh, "NA", format_type
+                    ]
                 else:
                     worker_script = f"{MODEL_TYPE}_worker.py"
                     env_name = "esm"
@@ -299,7 +320,7 @@ def main():
                         "conda", "run", "-n", env_name, "python", worker_script,
                         name, vh, vl, format_type
                     ]
-                print(f"Launching worker subprocess: {' '.join(worker_args)}")
+                print(f"Launching: {' '.join(worker_args)}")
                 subprocess.run(worker_args, check=True)
             except subprocess.CalledProcessError as e:
                 print(f"Worker script failed for {name}: {e}")
@@ -308,10 +329,8 @@ def main():
         elif MODEL_TYPE == "ablang":
             if ablang_model is None:
                 ablang_model = load_model(format_type, MODEL_TYPE)
-                # Ensure tokenizer has the necessary attributes
                 if not hasattr(ablang_model.tokenizer, "aa_to_token"):
                     ablang_model.tokenizer.aa_to_token = ablang_model.tokenizer.vocab_to_token
-
             try:
                 df = score_paired(vh, vl, ablang_model, format_type, MODEL_TYPE, sample_name=name)
                 df = df.rename(columns={
@@ -329,11 +348,10 @@ def main():
                 ]
                 df = df[columns_order]
                 df.to_csv(OUTPUT, sep="\t", mode="a", header=not os.path.exists(OUTPUT), index=False)
-                print(f"Wrote results for {name} to {OUTPUT}")
+                print(f"Results for {name} written to {OUTPUT}")
             except Exception as e:
-                print(f"Failed scoring with ablang for {name}: {e}")
+                print(f"Failed scoring ablang for {name}: {e}")
                 continue
-
 
 if __name__ == "__main__":
     main()
