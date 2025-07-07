@@ -139,22 +139,22 @@ def main():
                 columns=output_columns
             )
 
-            base_csv_name = os.path.basename(antifold_csv).replace(".csv", "_tidy.tsv")
+            base_csv_name = os.path.basename(antifold_csv).replace(".csv", "_tidy.csv")
             tidy_path = os.path.join(output_dir, base_csv_name)
             tidy_df.to_csv(tidy_path, index=False, sep="\t")
-            print(f"Wrote tidy AntiFold-style TSV to {tidy_path}")
+            print(f"Wrote tidy AntiFold-style CSV to {tidy_path}")
 
-            combined_tidy = os.path.join(output_dir, f"{format_type}_antifold.tsv")
+            combined_tidy = os.path.join(output_dir, f"{format_type}_antifold.csv")
 
             if not os.path.exists(combined_tidy):
                 tidy_df.to_csv(combined_tidy, index=False, sep="\t", columns=output_columns)
-                print(f"Created new combined tidy TSV: {combined_tidy}")
+                print(f"Created new combined tidy CSV: {combined_tidy}")
             else:
                 tidy_df.to_csv(combined_tidy, mode="a", index=False, header=False, sep="\t", columns=output_columns)
-                print(f"Appended to combined tidy TSV: {combined_tidy}")
+                print(f"Appended to combined tidy CSV: {combined_tidy}")
 
     except Exception as e:
-        print(f"ERROR while transforming tidy TSV: {e}")
+        print(f"ERROR while transforming tidy CSV: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":
