@@ -21,12 +21,10 @@ def main():
     pdb_file = os.path.join(pdb_dir, f"{sample_name}.pdb")
     cif_file = os.path.join(output_dir, f"{sample_name}.cif")
 
-    # check PDB existence
     if not os.path.exists(pdb_file):
         print(f"ERROR: missing PDB file: {pdb_file}")
         sys.exit(1)
 
-    # try conversion to CIF
     if not os.path.exists(cif_file):
         print(f"Converting {pdb_file} to mmCIF with gemmi...")
         try:
@@ -37,11 +35,10 @@ def main():
         except Exception as e:
             print(f"ERROR during CIF conversion: {e}")
             print("Falling back to using the PDB directly.")
-            cif_file = pdb_file  # fallback
+            cif_file = pdb_file
     else:
         print(f"Using existing CIF: {cif_file}")
 
-    # check structure to get chain information
     try:
         structure = gemmi.read_structure(cif_file)
         chains = [chain.name for chain in structure[0]]
@@ -49,7 +46,6 @@ def main():
         print(f"ERROR reading structure from {cif_file}: {e}")
         sys.exit(1)
 
-    # build antifold command
     if format_type == "Nanobody":
         if len(chains) != 1:
             print(f"ERROR: expected exactly 1 chain for Nanobody, found: {chains}")
@@ -80,7 +76,6 @@ def main():
         print("ERROR: Only 'Nanobody' and 'VHVL' format types are supported.")
         sys.exit(1)
 
-    # run antifold
     print(f"Executing: {' '.join(cmd)}")
     try:
         subprocess.run(cmd, check=True)
@@ -91,64 +86,75 @@ def main():
 
     # tidy csv transform
     try:
-        antifold_csv = os.path.join(output_dir, f"{sample_name}_{chain}.csv")
-        if not os.path.exists(antifold_csv):
-            print(f"ERROR: Cannot find expected AntiFold output CSV: {antifold_csv}")
+        # list any CSV starting with sample name
+        available_csvs = [
+            os.path.join(output_dir, f)
+            for f in os.listdir(output_dir)
+            if f.startswith(sample_name) and f.endswith(".csv")
+        ]
+
+        if not available_csvs:
+            print(f"ERROR: Could not find any AntiFold CSV output files for {sample_name}")
             sys.exit(1)
-        
-        print(f"Parsing AntiFold CSV to tidy format: {antifold_csv}")
-        af = pd.read_csv(antifold_csv)
-        aas = list("ACDEFGHIKLMNPQRSTVWY")
 
-        records = []
+        # define desired output column order
+        output_columns = [
+            "chain", "pos", "wt", "mt",
+            "mut_log_likelihood_antifold",
+            "wt_log_likelihood_antifold",
+            "delta_log_likelihood_antifold",
+            "sample"
+        ]
 
-        for _, row in af.iterrows():
-            pos = row["pdb_pos"]
-            chain = row["pdb_chain"]
-            wt = row["pdb_res"]
-            wt_ll = row[wt] if wt in aas else None
-            if wt_ll is None:
-                continue
-            for mt in aas:
-                mut_ll = row[mt]
-                delta = mut_ll - wt_ll
-                records.append((
-                    chain,
-                    pos,
-                    wt,
-                    mt,
-                    delta,
-                    mut_ll,
-                    wt_ll,
-                    sample_name
-                ))
+        for antifold_csv in available_csvs:
+            print(f"Parsing AntiFold CSV to tidy format: {antifold_csv}")
+            af = pd.read_csv(antifold_csv)
+            aas = list("ACDEFGHIKLMNPQRSTVWY")
 
-        tidy_df = pd.DataFrame(
-            records,
-            columns=[
-                "chain", "pos", "wt", "mt",
-                "delta_log_likelihood_antifold",
-                "mut_log_likelihood_antifold",
-                "wt_log_likelihood_antifold",
-                "sample"
-            ]
-        )
+            records = []
 
-        tidy_path = os.path.join(output_dir, f"{sample_name}_{chain}_tidy.csv")
-        tidy_df.to_csv(tidy_path, index=False)
-        print(f"Wrote tidy AntiFold-style CSV to {tidy_path}")
-        
-        # additionally append to a combined file
-        combined_tidy = os.path.join(output_dir, f"{format_type}_antifold.csv")
-        if not os.path.exists(combined_tidy):
-            tidy_df.to_csv(combined_tidy, index=False)
-            print(f"Created new combined tidy CSV: {combined_tidy}")
-        else:
-            tidy_df.to_csv(combined_tidy, mode="a", index=False, header=False)
-            print(f"Appended to combined tidy CSV: {combined_tidy}")
+            for _, row in af.iterrows():
+                pos = row["pdb_pos"]
+                chain_label = row["pdb_chain"]
+                wt = row["pdb_res"]
+                wt_ll = row[wt] if wt in aas else None
+                if wt_ll is None:
+                    continue
+                for mt in aas:
+                    mut_ll = row[mt]
+                    delta = mut_ll - wt_ll
+                    records.append((
+                        chain_label,
+                        pos,
+                        wt,
+                        mt,
+                        mut_ll,
+                        wt_ll,
+                        delta,
+                        sample_name
+                    ))
+
+            tidy_df = pd.DataFrame(
+                records,
+                columns=output_columns
+            )
+
+            base_csv_name = os.path.basename(antifold_csv).replace(".csv", "_tidy.tsv")
+            tidy_path = os.path.join(output_dir, base_csv_name)
+            tidy_df.to_csv(tidy_path, index=False, sep="\t")
+            print(f"Wrote tidy AntiFold-style TSV to {tidy_path}")
+
+            combined_tidy = os.path.join(output_dir, f"{format_type}_antifold.tsv")
+
+            if not os.path.exists(combined_tidy):
+                tidy_df.to_csv(combined_tidy, index=False, sep="\t", columns=output_columns)
+                print(f"Created new combined tidy TSV: {combined_tidy}")
+            else:
+                tidy_df.to_csv(combined_tidy, mode="a", index=False, header=False, sep="\t", columns=output_columns)
+                print(f"Appended to combined tidy TSV: {combined_tidy}")
 
     except Exception as e:
-        print(f"ERROR while transforming tidy CSV: {e}")
+        print(f"ERROR while transforming tidy TSV: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":

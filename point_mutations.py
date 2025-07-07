@@ -22,7 +22,7 @@ except Exception:
 AAs = "IVLCMAGTSWYPHEQDNKR"
 
 # CONFIG
-MODE = "vhh"   # auto, vhh, mab
+MODE = "mab"   # auto, vhh, mab
 MODEL_TYPE = "antifold"  # ablang, esm2, esm1f, antiberta, antifold
 INPUT_CSV = "/home/eva/0_point_mutation/results/TheraSAbDab_SeqStruc_OnlineDownload.csv"
 OUTPUT = f"/home/eva/0_point_mutation/results/{MODEL_TYPE}/{MODE}_{MODEL_TYPE}.csv"
@@ -38,64 +38,83 @@ def load_model(format_type, model_type):
         import ablang2
         m = "ablang1-heavy" if format_type == "Nanobody" else "ablang2-paired"
         model = ablang2.pretrained(m, random_init=False, ncpu=1, device="cpu")
+        print("DEBUG tokenizer:", type(model.tokenizer))
         model.freeze()
         return model
     else:
         return None  # handled below
 
 def score_paired(vh_seq, vl_seq, model, format_type, model_type, sample_name=None):
-    if model_type == "ablang":
-        if format_type == "Nanobody":
-            seqs = [vh_seq]
-            tokenized = model.tokenizer(seqs, pad=True, device="cpu")
-            with torch.no_grad():
-                logits = model.AbLang(tokenized)[0]
-            logits = logits[1:len(vh_seq)+1]
-            records = []
-            tok_to_idx = {aa: idx for idx, aa in enumerate(AAs)}
-            for pos, wt in enumerate(vh_seq):
-                if wt not in tok_to_idx:
-                    continue
-                wt_ll = logits[pos][tok_to_idx[wt]].item()
-                for mt in AAs:
-                    mut_ll = logits[pos][tok_to_idx[mt]].item()
-                    delta_ll = mut_ll - wt_ll
-                    records.append(("VH", pos+1, wt, mt, delta_ll, mut_ll, wt_ll))
-        else:
-            pair = f"{vh_seq}|{vl_seq}"
-            tokenized = model.tokenizer([pair], pad=True, w_extra_tkns=False, device="cpu")
-            with torch.no_grad():
-                logits = model.AbLang(tokenized)[0]
-            vh_len = len(vh_seq)
-            vl_len = len(vl_seq)
-            vh_logits = logits[1:vh_len+1]
-            vl_logits = logits[vh_len+2:vh_len+2+vl_len]
-            records = []
-            tok_to_idx = {aa: idx for idx, aa in enumerate(AAs)}
-            for pos, wt in enumerate(vh_seq):
-                if wt not in tok_to_idx:
-                    continue
-                wt_ll = vh_logits[pos][tok_to_idx[wt]].item()
-                for mt in AAs:
-                    mut_ll = vh_logits[pos][tok_to_idx[mt]].item()
-                    delta_ll = mut_ll - wt_ll
-                    records.append(("VH", pos+1, wt, mt, delta_ll, mut_ll, wt_ll))
-            for pos, wt in enumerate(vl_seq):
-                if wt not in tok_to_idx:
-                    continue
-                wt_ll = vl_logits[pos][tok_to_idx[wt]].item()
-                for mt in AAs:
-                    mut_ll = vl_logits[pos][tok_to_idx[mt]].item()
-                    delta_ll = mut_ll - wt_ll
-                    records.append(("VL", pos+1, wt, mt, delta_ll, mut_ll, wt_ll))
-        return pd.DataFrame(records, columns=[
-            "chain", "pos", "wt", "mt",
-            "delta_log_likelihood", "mut_log_likelihood", "wt_log_likelihood"
-        ])
+    """
+    Robustly supports ablang1-heavy (nanobody) and ablang2-paired (VHVL).
+    """
+
+    if format_type == "Nanobody":
+        # ablang1-heavy expects a single sequence
+        fullseq = vh_seq
     else:
-        raise NotImplementedError(
-            f"Direct scoring for {model_type} is not supported in this script — handled below."
-        )
+        # ablang2-paired expects chain separator
+        fullseq = f"{vh_seq}|{vl_seq}"
+
+    seqs = {}
+    for i in range(len(fullseq)):
+        if format_type != "Nanobody" and fullseq[i] == "|":
+            continue
+        newseq = fullseq[:i] + "*" + fullseq[i+1:]
+        if format_type == "Nanobody":
+            chain = "H"
+            pos = i + 1
+        else:
+            if i < len(vh_seq):
+                chain = "H"
+                pos = i + 1
+            elif i > len(vh_seq):  # after separator
+                chain = "L"
+                pos = i - len(vh_seq)  # correct because the pipe is at len(vh_seq)
+        seqs[(chain, pos)] = newseq
+
+    records = []
+
+    for (chain, pos), seq in seqs.items():
+        idx = seq.index("*")
+
+        # safely choose w_extra_tkns only if available
+        call_params = model.tokenizer.__call__.__code__.co_varnames
+        if "w_extra_tkns" in call_params:
+            tokenized = model.tokenizer([seq], pad=True, w_extra_tkns=False, device="cpu")
+        else:
+            tokenized = model.tokenizer([seq], pad=True, device="cpu")
+
+        with torch.no_grad():
+            logits = model.AbLang(tokenized)[0]
+
+        # only apply special_tokens masking if they exist
+        special_tokens = getattr(model.tokenizer, "all_special_tokens", None)
+        if special_tokens:
+            logits[:, special_tokens] = -float("inf")
+
+        wt_token = model.tokenizer.aa_to_token[fullseq[idx]]
+        wt_ll = logits[idx, wt_token].item()
+
+        for aa in "ACDEFGHIKLMNPQRSTVWY":
+            if aa == fullseq[idx]:
+                continue
+            aa_token = model.tokenizer.aa_to_token[aa]
+            mut_ll = logits[idx, aa_token].item()
+            delta_ll = mut_ll - wt_ll
+            records.append({
+                "sample": sample_name,
+                "chain": chain,
+                "pos": pos,  # the correct pos from the dictionary key
+                "wt": fullseq[idx],
+                "mt": aa,
+                "wt_log_likelihood": wt_ll,
+                "mut_log_likelihood": mut_ll,
+                "delta_log_likelihood": delta_ll,
+            })
+
+    return pd.DataFrame.from_records(records)
+
 
 def run_abodybuilder2(vh_seq, vl_seq, output_path):
     from ImmuneBuilder import ABodyBuilder2, NanoBodyBuilder2
@@ -131,8 +150,6 @@ def mutation_scan_paired(antiberty, vh_seq, vl_seq=None, batch_size=16):
     vh_info = []
     for pos, wt in enumerate(vh_seq):
         for mt in AAs:
-            if mt == wt:
-                continue
             mutated_vh = vh_seq[:pos] + mt + vh_seq[pos+1:]
             vh_mutants.append([mutated_vh] if not vl_seq else [mutated_vh, vl_seq])
             vh_info.append(("H", pos+1, wt, mt))
@@ -298,6 +315,9 @@ def main():
         elif MODEL_TYPE == "ablang":
             if ablang_model is None:
                 ablang_model = load_model(format_type, MODEL_TYPE)
+                if not hasattr(ablang_model.tokenizer, "aa_to_token"):
+                    ablang_model.tokenizer.aa_to_token = ablang_model.tokenizer.vocab_to_token
+
             try:
                 df = score_paired(vh, vl, ablang_model, format_type, MODEL_TYPE, sample_name=name)
                 df = df.rename(columns={
@@ -306,6 +326,20 @@ def main():
                     "wt_log_likelihood": f"wt_log_likelihood_{MODEL_TYPE}"
                 })
                 df["sample"] = name
+
+                # reorder columns here
+                columns_order = [
+                    "chain",
+                    "pos",
+                    "wt",
+                    "mt",
+                    f"mut_log_likelihood_{MODEL_TYPE}",
+                    f"wt_log_likelihood_{MODEL_TYPE}",
+                    f"delta_log_likelihood_{MODEL_TYPE}",
+                    "sample"
+                ]
+                df = df[columns_order]
+
                 if not os.path.exists(OUTPUT):
                     df.to_csv(OUTPUT, sep="\t", index=False)
                 else:
@@ -314,12 +348,6 @@ def main():
             except Exception as e:
                 print(f"Failed scoring with ablang for {name}: {e}")
                 continue
-
-        else:
-            print(f"Unknown MODEL_TYPE {MODEL_TYPE}")
-            continue
-
-    print("All done.")
 
 if __name__ == "__main__":
     main()
