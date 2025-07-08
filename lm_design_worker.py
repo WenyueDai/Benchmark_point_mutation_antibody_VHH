@@ -35,6 +35,9 @@ def compute_log_likelihoods(batch, model, cuda=True):
         print("DEBUG log_probs shape:", log_probs.shape)
         return log_probs.cpu()
 
+def sanitize_sequence(seq):
+    return ''.join(res for res in seq if res in AMINO_ACIDS)
+
 def main():
     if len(sys.argv) != 5:
         print("Usage: python lm_design_worker.py <sample_name> <vh_seq> <vl_seq_or_NA> <format_type>")
@@ -52,7 +55,7 @@ def main():
         cfg = Cfg(
             cuda=True,
             generator=Cfg(
-                max_iter=1,
+                max_iter=3,
                 strategy="denoise",
                 temperature=0,
                 eval_sc=False,
@@ -63,54 +66,61 @@ def main():
 
         print(f"Loading PDB structure from: {pdb_path}")
         designer.set_structure(pdb_path)
-        print("Structure loaded successfully. Type:", type(designer._structure))
-        print(f"Loaded structure: {sample_name}")
+        
+        print("\n=== Full Token Index Mapping ===")
+        max_index = 50  # Adjust as needed
+        for idx in range(max_index):
+            try:
+                tok = designer.alphabet.get_tok(idx)
+                print(f"Index {idx:2d}: {repr(tok)}")
+            except:
+                break
+            
+        print("\n=== Amino Acid to Index Mapping ===")
+        for aa in AMINO_ACIDS:
+            idx = designer.alphabet.get_idx(aa)
+            print(f"{aa} → {idx}")
 
-        native_seq = designer._structure.get("seq", None)
-        if native_seq is None:
-            raise ValueError("No sequence found in structure.")
 
+        if designer._structure is None or "seq" not in designer._structure:
+            raise ValueError("Structure not properly loaded or missing 'seq' field.")
+
+        native_seq = designer._structure["seq"]
         if isinstance(native_seq, tuple):
             print("WARNING: seq was a tuple, unpacking first element.")
             native_seq = native_seq[0]
 
-        print("DEBUG native_seq type:", type(native_seq), "value:", native_seq[:10])
+        native_seq = sanitize_sequence(native_seq)
+        print("native_seq length:", len(native_seq), "sequence (first 20):", native_seq[:20])
 
         chain_id = "H"  # default for Nanobody
         batch = designer._featurize()
         log_probs = compute_log_likelihoods(batch, designer.model)
 
+        # Limit to valid amino acid indices (L to C = index 4–23)
+        VALID_IDX = set(range(4, 24))
+
         result_rows = []
         for i, wt_aa in enumerate(native_seq):
             wt_idx = designer.alphabet.get_idx(wt_aa)
-            if wt_idx is None:
-                print(f"Skipping invalid amino acid at position {i+1}: {wt_aa}")
+            if wt_idx not in VALID_IDX:
+                print(f"Skipping wt residue {wt_aa} at pos {i+1} → idx {wt_idx}")
                 continue
 
             try:
-                # Handle different shapes: [L, 20] or [1, L, 20]
-                if log_probs.ndim == 2:
-                    wt_log_prob = log_probs[i, wt_idx].item()
-                elif log_probs.ndim == 3:
-                    wt_log_prob = log_probs[0, i, wt_idx].item()
-                else:
-                    raise ValueError(f"Unexpected log_probs shape: {log_probs.shape}")
+                wt_log_prob = log_probs[0, i, wt_idx].item()
             except IndexError:
-                print(f"Index error at position {i}, skipping")
                 continue
 
             for mt_aa in AMINO_ACIDS:
                 if mt_aa == wt_aa:
                     continue
                 mt_idx = designer.alphabet.get_idx(mt_aa)
-                if mt_idx is None:
+                if mt_idx not in VALID_IDX:
                     continue
 
                 try:
-                    if log_probs.ndim == 2:
-                        mt_log_prob = log_probs[i, mt_idx].item()
-                    else:
-                        mt_log_prob = log_probs[0, i, mt_idx].item()
+                    mt_log_prob = log_probs[0, i, mt_idx].item()
                 except IndexError:
                     continue
 
