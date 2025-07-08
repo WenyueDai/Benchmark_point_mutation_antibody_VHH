@@ -1,0 +1,121 @@
+name: fixedbb/cath_4.2/lm_design_esm2_650m
+train:
+  train: true
+  test: true
+  debug: false
+  force_restart: true
+  ckpt_path: last.ckpt
+  seed: 42
+  lr: 0.001
+  monitor: val/acc_median
+  mode: max
+  patience: 30
+print_config: true
+ignore_warnings: true
+seed: 42
+datamodule:
+  _target_: cath
+  data_dir: /root/research/data/protein/cath
+  chain_set_jsonl: chain_set.jsonl
+  chain_set_splits_json: chain_set_splits.json
+  max_length: 500
+  atoms:
+  - 'N'
+  - CA
+  - C
+  - O
+  max_tokens: 6000
+  sort: true
+  num_workers: 8
+  pin_memory: true
+  alphabet:
+    name: esm
+    featurizer: cath
+callbacks:
+  model_summary:
+    _target_: pytorch_lightning.callbacks.RichModelSummary
+    max_depth: -1
+  model_checkpoint:
+    _target_: byprot.utils.callbacks.ModelCheckpoint
+    monitor: ${train.monitor}
+    mode: ${train.mode}
+    save_top_k: 1
+    save_last: true
+    verbose: true
+    dirpath: checkpoints
+    filename: step_{global_step}-${train.monitor}_{${train.monitor}:.2f}
+    auto_insert_metric_name: false
+  early_stopping:
+    _target_: pytorch_lightning.callbacks.EarlyStopping
+    monitor: ${train.monitor}
+    mode: ${train.mode}
+    patience: ${train.patience}
+    min_delta: 0
+    check_on_train_epoch_end: false
+trainer:
+  _target_: pytorch_lightning.Trainer
+  gpus: auto
+  min_epochs: 10
+  max_epochs: 10000
+  enable_progress_bar: true
+  log_every_n_steps: 10
+  resume_from_checkpoint: null
+  strategy: ddp_sharded_fbo
+  precision: 16
+  gradient_clip_val: 0.0
+  num_sanity_val_steps: 1
+  reload_dataloaders_every_n_epochs: 1
+  replace_sampler_ddp: false
+  max_steps: 200000
+model:
+  _target_: esm2_adapter
+  encoder:
+    d_model: 128
+    n_enc_layers: 3
+    n_dec_layers: 3
+    nar: true
+    use_esm_alphabet: true
+  name: esm2_t33_650M_UR50D
+  adapter_layer_indices:
+  - -1
+  separate_loss: true
+task:
+  _target_: fixedbb/cmlm
+  alphabet: ${datamodule.alphabet}
+  learning:
+    noise: random_mask
+  criterion:
+    _target_: byprot.modules.cross_entropy.Coord2SeqCrossEntropyLoss
+    label_smoothing: 0.0
+    ignore_index: 1
+  optimizer:
+    type: adamw
+    _partial_: true
+    lr: ${train.lr}
+    betas:
+    - 0.9
+    - 0.98
+    weight_decay: 0.0001
+  lr_scheduler:
+    type: noam
+    warmup_steps: 4000
+    model_size: 128
+    lr: ${train.lr}
+    warmup_init_lr: 1.0e-07
+  generator:
+    max_iter: 5
+    strategy: denoise
+logger:
+  tensorboard:
+    _target_: pytorch_lightning.loggers.tensorboard.TensorBoardLogger
+    save_dir: tensorboard/
+    name: null
+    version: ${name}
+    log_graph: false
+    default_hp_metric: true
+    prefix: ''
+paths:
+  root_dir: ${oc.env:PROJECT_ROOT}
+  data_dir: ${paths.root_dir}/data/
+  log_dir: ${paths.root_dir}/run/logs/${name}
+  ckpt_dir: ${paths.log_dir}/checkpoints

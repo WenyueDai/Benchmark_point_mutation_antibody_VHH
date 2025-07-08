@@ -6,20 +6,23 @@ import gemmi
 import subprocess
 import pandas as pd
 
+PDB_INPUT_DIR = "/home/eva/0_point_mutation/pdbs"  # Adjust if needed
+ANTIFOLD_OUTPUT_DIR = "/home/eva/0_point_mutation/results/antifold"
+
 def main():
     if len(sys.argv) != 5:
-        print("Usage: python antifold_worker.py <sample_name> <pdb_dir> <output_dir> <format_type>")
+        print("Usage: python antifold_worker.py <sample_name> <vh_seq> <vl_seq_or_NA> <format_type>")
         sys.exit(1)
 
     sample_name = sys.argv[1]
-    pdb_dir = sys.argv[2]
-    output_dir = sys.argv[3]
+    vh_seq = sys.argv[2]   # Ignored here
+    vl_seq = sys.argv[3]   # Ignored here
     format_type = sys.argv[4]
 
     print(f"DEBUG: running antifold on sample '{sample_name}', format={format_type}")
 
-    pdb_file = os.path.join(pdb_dir, f"{sample_name}.pdb")
-    cif_file = os.path.join(output_dir, f"{sample_name}.cif")
+    pdb_file = os.path.join(PDB_INPUT_DIR, f"{sample_name}.pdb")
+    cif_file = os.path.join(ANTIFOLD_OUTPUT_DIR, f"{sample_name}.cif")
 
     if not os.path.exists(pdb_file):
         print(f"ERROR: missing PDB file: {pdb_file}")
@@ -56,7 +59,7 @@ def main():
             "python", "-m", "antifold.main",
             "--pdb_file", cif_file,
             "--nanobody_chain", chain,
-            "--out_dir", output_dir
+            "--out_dir", ANTIFOLD_OUTPUT_DIR
         ]
     elif format_type == "VHVL":
         if len(chains) < 2:
@@ -70,7 +73,7 @@ def main():
             "--pdb_file", cif_file,
             "--heavy_chain", heavy_chain,
             "--light_chain", light_chain,
-            "--out_dir", output_dir
+            "--out_dir", ANTIFOLD_OUTPUT_DIR
         ]
     else:
         print("ERROR: Only 'Nanobody' and 'VHVL' format types are supported.")
@@ -86,10 +89,9 @@ def main():
 
     # tidy csv transform
     try:
-        # list any CSV starting with sample name
         available_csvs = [
-            os.path.join(output_dir, f)
-            for f in os.listdir(output_dir)
+            os.path.join(ANTIFOLD_OUTPUT_DIR, f)
+            for f in os.listdir(ANTIFOLD_OUTPUT_DIR)
             if f.startswith(sample_name) and f.endswith(".csv")
         ]
 
@@ -97,7 +99,6 @@ def main():
             print(f"ERROR: Could not find any AntiFold CSV output files for {sample_name}")
             sys.exit(1)
 
-        # define desired output column order
         output_columns = [
             "chain", "pos", "wt", "mt",
             "mut_log_likelihood_antifold",
@@ -112,7 +113,6 @@ def main():
             aas = list("ACDEFGHIKLMNPQRSTVWY")
 
             records = []
-
             for _, row in af.iterrows():
                 pos = row["pdb_pos"]
                 chain_label = row["pdb_chain"]
@@ -124,33 +124,20 @@ def main():
                     mut_ll = row[mt]
                     delta = mut_ll - wt_ll
                     records.append((
-                        chain_label,
-                        pos,
-                        wt,
-                        mt,
-                        mut_ll,
-                        wt_ll,
-                        delta,
-                        sample_name
+                        chain_label, pos, wt, mt, mut_ll, wt_ll, delta, sample_name
                     ))
 
-            tidy_df = pd.DataFrame(
-                records,
-                columns=output_columns
-            )
-
-            base_csv_name = os.path.basename(antifold_csv).replace(".csv", "_tidy.csv")
-            tidy_path = os.path.join(output_dir, base_csv_name)
+            tidy_df = pd.DataFrame(records, columns=output_columns)
+            tidy_path = os.path.join(ANTIFOLD_OUTPUT_DIR, f"{sample_name}_tidy.csv")
             tidy_df.to_csv(tidy_path, index=False, sep="\t")
             print(f"Wrote tidy AntiFold-style CSV to {tidy_path}")
 
-            combined_tidy = os.path.join(output_dir, f"{format_type}_antifold.csv")
-
+            combined_tidy = os.path.join(ANTIFOLD_OUTPUT_DIR, f"{format_type}_antifold.csv")
             if not os.path.exists(combined_tidy):
                 tidy_df.to_csv(combined_tidy, index=False, sep="\t", columns=output_columns)
                 print(f"Created new combined tidy CSV: {combined_tidy}")
             else:
-                tidy_df.to_csv(combined_tidy, mode="a", index=False, header=False, sep="\t", columns=output_columns)
+                tidy_df.to_csv(combined_tidy, mode="a", header=False, index=False, sep="\t", columns=output_columns)
                 print(f"Appended to combined tidy CSV: {combined_tidy}")
 
     except Exception as e:

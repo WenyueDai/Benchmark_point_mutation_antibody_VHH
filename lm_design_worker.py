@@ -1,0 +1,139 @@
+#!/usr/bin/env python3
+
+import sys
+import os
+import torch
+import pandas as pd
+from byprot.utils.config import compose_config as Cfg
+from byprot.tasks.fixedbb.designer import Designer
+
+PDB_INPUT_DIR = "/home/eva/0_point_mutation/pdbs"
+LMDESIGN_OUTPUT_DIR = "/home/eva/0_point_mutation/results/lmdesign"
+LM_MODEL_PATH = "/home/eva/0_point_mutation/ByProt-main/checkpoint/lm_design_esm2_650m"
+
+os.makedirs(LMDESIGN_OUTPUT_DIR, exist_ok=True)
+
+AMINO_ACIDS = list("ACDEFGHIKLMNPQRSTVWY")
+
+def compute_log_likelihoods(batch, model, cuda=True):
+    with torch.no_grad():
+        if cuda:
+            batch = {k: v.cuda() if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+
+        output = model(batch)
+        if isinstance(output, tuple):
+            output = output[0]
+
+        if isinstance(output, dict) and "logits" in output:
+            logits = output["logits"]
+        elif torch.is_tensor(output):
+            logits = output
+        else:
+            raise TypeError(f"Unexpected model output type: {type(output)}")
+
+        log_probs = torch.nn.functional.log_softmax(logits, dim=-1)
+        print("DEBUG log_probs shape:", log_probs.shape)
+        return log_probs.cpu()
+
+def main():
+    if len(sys.argv) != 5:
+        print("Usage: python lm_design_worker.py <sample_name> <vh_seq> <vl_seq_or_NA> <format_type>")
+        sys.exit(1)
+
+    sample_name = sys.argv[1]
+    format_type = sys.argv[4]
+    pdb_path = os.path.join(PDB_INPUT_DIR, f"{sample_name}.pdb")
+
+    if not os.path.exists(pdb_path):
+        print(f"ERROR: PDB file does not exist: {pdb_path}")
+        sys.exit(1)
+
+    try:
+        cfg = Cfg(
+            cuda=True,
+            generator=Cfg(
+                max_iter=1,
+                strategy="denoise",
+                temperature=0,
+                eval_sc=False,
+            )
+        )
+
+        designer = Designer(experiment_path=LM_MODEL_PATH, cfg=cfg)
+
+        print(f"Loading PDB structure from: {pdb_path}")
+        designer.set_structure(pdb_path)
+        print("Structure loaded successfully. Type:", type(designer._structure))
+        print(f"Loaded structure: {sample_name}")
+
+        native_seq = designer._structure.get("seq", None)
+        if native_seq is None:
+            raise ValueError("No sequence found in structure.")
+
+        if isinstance(native_seq, tuple):
+            print("WARNING: seq was a tuple, unpacking first element.")
+            native_seq = native_seq[0]
+
+        print("DEBUG native_seq type:", type(native_seq), "value:", native_seq[:10])
+
+        chain_id = "H"  # default for Nanobody
+        batch = designer._featurize()
+        log_probs = compute_log_likelihoods(batch, designer.model)
+
+        result_rows = []
+        for i, wt_aa in enumerate(native_seq):
+            wt_idx = designer.alphabet.get_idx(wt_aa)
+            if wt_idx is None:
+                print(f"Skipping invalid amino acid at position {i+1}: {wt_aa}")
+                continue
+
+            try:
+                # Handle different shapes: [L, 20] or [1, L, 20]
+                if log_probs.ndim == 2:
+                    wt_log_prob = log_probs[i, wt_idx].item()
+                elif log_probs.ndim == 3:
+                    wt_log_prob = log_probs[0, i, wt_idx].item()
+                else:
+                    raise ValueError(f"Unexpected log_probs shape: {log_probs.shape}")
+            except IndexError:
+                print(f"Index error at position {i}, skipping")
+                continue
+
+            for mt_aa in AMINO_ACIDS:
+                if mt_aa == wt_aa:
+                    continue
+                mt_idx = designer.alphabet.get_idx(mt_aa)
+                if mt_idx is None:
+                    continue
+
+                try:
+                    if log_probs.ndim == 2:
+                        mt_log_prob = log_probs[i, mt_idx].item()
+                    else:
+                        mt_log_prob = log_probs[0, i, mt_idx].item()
+                except IndexError:
+                    continue
+
+                delta = mt_log_prob - wt_log_prob
+                result_rows.append({
+                    "chain": chain_id,
+                    "pos": i + 1,
+                    "wt": wt_aa,
+                    "mt": mt_aa,
+                    "mut_log_likelihood_lm_design": mt_log_prob,
+                    "wt_log_likelihood_lm_design": wt_log_prob,
+                    "delta_log_likelihood_lm_design": delta,
+                    "sample": sample_name
+                })
+
+        df = pd.DataFrame(result_rows)
+        out_csv = os.path.join(LMDESIGN_OUTPUT_DIR, f"{sample_name}_point_mutation_scan.csv")
+        df.to_csv(out_csv, index=False)
+        print(f"Saved point mutation log-likelihood scan to: {out_csv}")
+
+    except Exception as e:
+        print(f"ERROR running LM-Design point mutation scan: {e}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,6 @@
+- experiment=fixedbb/lm_design_esm2_650m
+- name=fixedbb/cath_4.2/lm_design_esm2_650m
+- logger=tensorboard
+- datamodule=cath_4.2
+- trainer=ddp_fp16
+- train.force_restart=true
