@@ -1,0 +1,7 @@
+[2025-07-08 09:09:18,764] Running inverse folding on PDB/CIFs ...
+[2025-07-08 09:09:20,943] Loaded model to cuda.
+[2025-07-08 09:09:20,944] NOTE: Custom chain mode enabled. Will run specified chain(s).
+[2025-07-08 09:09:20,944] Reading in (1) PDBs from DataFrame
+[2025-07-08 09:09:21,012] Predicting batch 1/1: PDBs 1-1 out of 1 total
+[2025-07-08 09:09:21,579] Saving 1 CSVs to /home/eva/0_point_mutation/results/antifold
+[2025-07-08 09:09:21,583] Writing Tixentamig_H per-residue log probs CSV to /home/eva/0_point_mutation/results/antifold/Tixentamig_H.csv
