@@ -23,7 +23,7 @@ except Exception:
 # CONFIGURATION
 # =============================
 MODE = "vhh"   # auto (for all), vhh, mab
-MODEL_TYPE = "lm_design"  # ablang, esm2, esm1f, antiberta, antifold, nanobert, pyrosetta, lm_design
+MODEL_TYPE = "ablang"  # ablang, esm2, esm1f, antiberta, antifold, nanobert, pyrosetta, lm_design
 
 INPUT_CSV = "/home/eva/0_point_mutation/results/TheraSAbDab_SeqStruc_OnlineDownload.csv"
 OUTPUT = f"/home/eva/0_point_mutation/results/{MODEL_TYPE}/{MODE}_{MODEL_TYPE}.csv"
@@ -120,6 +120,45 @@ def run_abodybuilder2(vh_seq, vl_seq, output_path):
     model = predictor.predict({'H': vh_seq, 'L': vl_seq} if vl_seq else {'H': vh_seq})
     model.save(output_path)
     print(f"Saved structure to {output_path}")
+
+def renumber_pdb_sequential(pdb_path, output_path=None):
+    """
+    Rewrites a PDB file with sequential residue numbering for all chains.
+    """
+    if output_path is None:
+        output_path = pdb_path
+
+    new_lines = []
+    current_resi = {}
+    resi_map = {}
+
+    with open(pdb_path, "r") as f:
+        for line in f:
+            if not line.startswith(("ATOM", "HETATM")):
+                new_lines.append(line)
+                continue
+
+            chain = line[21]
+            resnum = int(line[22:26])
+            icode = line[26]
+
+            key = (chain, resnum, icode)
+            if chain not in current_resi:
+                current_resi[chain] = 1
+                resi_map[chain] = {}
+
+            if key not in resi_map[chain]:
+                resi_map[chain][key] = current_resi[chain]
+                current_resi[chain] += 1
+
+            new_resnum = resi_map[chain][key]
+            newline = line[:22] + f"{new_resnum:>4}" + line[26:]
+            new_lines.append(newline)
+
+    with open(output_path, "w") as f:
+        f.writelines(new_lines)
+    print(f"Renumbered PDB written to {output_path}")
+
 
 # =============================
 # ANTI-BERTY MUT SCAN
@@ -242,6 +281,7 @@ def main():
                         print(f"Generating PDB for {name} → {pdbfile}")
                         vl_clean = None if vl in ["", "NA", "na", None] else vl
                         run_abodybuilder2(vh, vl_clean if format_type == "VHVL" else None, pdbfile)
+                        renumber_pdb_sequential(pdbfile)
                     else:
                         print(f"PDB file already exists for {name}, skipping ABodyBuilder.")
 
