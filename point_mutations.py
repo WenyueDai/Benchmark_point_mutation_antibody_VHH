@@ -23,7 +23,7 @@ except Exception:
 # CONFIGURATION
 # =============================
 MODE = "vhh"   # auto (for all), vhh, mab
-MODEL_TYPE = "esm1f"  # ablang, esm1v, esm1f, antiberta, antifold, nanobert, pyrosetta, lm_design
+MODEL_TYPE = "antiberta"  # ablang, esm1v, esm1f, antiberta, antifold, nanobert, pyrosetta, lm_design
 
 INPUT_CSV = "/home/eva/0_point_mutation/results/TheraSAbDab_SeqStruc_OnlineDownload.csv"
 OUTPUT = f"/home/eva/0_point_mutation/results/{MODEL_TYPE}/{MODE}_{MODEL_TYPE}.csv"
@@ -181,7 +181,15 @@ def mutation_scan_paired(antiberty, vh_seq, vl_seq=None, batch_size=16):
                 mutants.append([mutated] if chain_label == "H" and not vl_seq else [vh_seq if chain_label == "L" else mutated, vl_seq if chain_label == "H" else mutated])
                 info.append((chain_label, pos + 1, wt, mt))
         flat = [item for pair in mutants for item in pair]
-        mut_plls = antiberty.pseudo_log_likelihood(flat, batch_size=batch_size)
+        # Ensure input is on the same device as the model
+        # flat: list of sequences (str)
+        # antiberty.tokenizer.encode(...): converts each sequence to a list of token IDs
+        # torch.tensor(...).to(device): puts each tokenized tensor on the same device as AntiBERTy model
+        # Pass the list of tensors (flat_encoded) to the model.
+        device = antiberty.device
+        flat_encoded = [torch.tensor(antiberty.tokenizer.encode(s)).to(device) for s in flat]
+        mut_plls = antiberty.pseudo_log_likelihood(flat_encoded, batch_size=batch_size)
+
         for idx, (chain, pos, wt, mt) in enumerate(info):
             records.append({
                 "chain": chain,
@@ -233,6 +241,8 @@ def main():
             print("ERROR: AntiBERTy not installed.")
             return
         antiberty = AntiBERTyRunner()
+        antiberty.model = antiberty.model.to("cpu")
+        antiberty.device = "cpu"
         print(f"Loaded AntiBERTy on {antiberty.device}")
 
     for sample_idx, (_, row) in enumerate(data.iterrows(), start=1):
@@ -263,6 +273,7 @@ def main():
                 if format_type == "VHVL" and (not vl or vl == "NA"):
                     print(f"Skipping {name}: missing VL sequence")
                     continue
+                device = antiberty.device
                 pll_scores = antiberty.pseudo_log_likelihood(seqs, batch_size=1)
                 mut_df = mutation_scan_paired(antiberty, vh, vl if vl else None, batch_size=16)
                 mut_df = mut_df.rename(columns={
