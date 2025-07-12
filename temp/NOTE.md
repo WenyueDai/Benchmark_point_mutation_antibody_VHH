@@ -157,3 +157,35 @@ def set_structure(
         if verbose:
             print("DEBUG: Structure keys:", self._structure.keys())
             return self._structure
+
+
+
+ESM1F
+conda create -n esm1f python=3.9 -y
+conda activate esm1f
+# Base scientific stack
+conda install numpy=1.23 pandas=1.5 -c conda-forge -y
+
+# Biotite from conda-forge for compatibility
+conda install biotite -c conda-forge -y
+
+# numexpr explicitly for pandas compatibility
+conda install numexpr=2.8 -c conda-forge -y
+
+# PyTorch (adjust for your GPU setup if needed)
+conda install pytorch torchvision torchaudio cpuonly -c pytorch -y  # Or cuda-compatible version
+
+# Install ESM from pip (latest)
+ pip install git+https://github.com/facebookresearch/esm.git@main
+
+python -c "import numpy; import pandas; import biotite.structure; import numexpr; print('All OK')"     
+conda install scipy -y
+
+(esm1f) eva@LAPTOP-S2RAAEJ3:~/0_point_mutation$ conda activate esm1f
+python -c "import torch; print(torch.__version__); print(torch.version.cuda)"
+2.5.1
+None
+
+For CPU only
+pip install torch-scatter torch-sparse torch-geometric \
+  -f https://data.pyg.org/whl/torch-2.5.1+cpu.html

@@ -23,7 +23,7 @@ except Exception:
 # CONFIGURATION
 # =============================
 MODE = "vhh"   # auto (for all), vhh, mab
-MODEL_TYPE = "ablang"  # ablang, esm2, esm1f, antiberta, antifold, nanobert, pyrosetta, lm_design
+MODEL_TYPE = "esm1f"  # ablang, esm1v, esm1f, antiberta, antifold, nanobert, pyrosetta, lm_design
 
 INPUT_CSV = "/home/eva/0_point_mutation/results/TheraSAbDab_SeqStruc_OnlineDownload.csv"
 OUTPUT = f"/home/eva/0_point_mutation/results/{MODEL_TYPE}/{MODE}_{MODEL_TYPE}.csv"
@@ -274,9 +274,9 @@ def main():
                 mut_df.to_csv(OUTPUT, sep="\t", mode="a", header=not os.path.exists(OUTPUT), index=False)
                 print(f"Results for {name} written to {OUTPUT}")
 
-            elif MODEL_TYPE in ["antifold", "esm2", "esm1f", "nanobert", "pyrosetta", "lm_design"]:
+            elif MODEL_TYPE in ["antifold", "esm1v", "esm1f", "nanobert", "pyrosetta", "lm_design"]:
                 pdbfile = os.path.join(PDB_OUTPUT_DIR, f"{name}.pdb")
-                if MODEL_TYPE in ["antifold", "pyrosetta", "lm_design"]:
+                if MODEL_TYPE in ["antifold", "pyrosetta", "lm_design", "esm1f"]:
                     if not os.path.exists(pdbfile):
                         print(f"Generating PDB for {name} → {pdbfile}")
                         vl_clean = None if vl in ["", "NA", "na", None] else vl
@@ -289,8 +289,8 @@ def main():
                     "antifold": ("antifold_worker.py", "antifold"),
                     "pyrosetta": ("pyrosetta_worker.py", "pyrosetta"),
                     "nanobert": ("nanobert_worker.py", "antiberty"),
-                    "esm2": ("esm2_worker.py", "esm"),
-                    "esm1f": ("esm1f_worker.py", "esm"),
+                    "esm1v": ("esm1v_worker.py", "esm"),
+                    "esm1f": ("esm1f_worker.py", "esm1f"),
                     "lm_design": ("lm_design_worker.py", "lm_design")
                 }
                 worker_script, env = script_map[MODEL_TYPE]
