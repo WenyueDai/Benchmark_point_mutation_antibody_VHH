@@ -43,6 +43,7 @@ labels = self.tokenizer.encode(
     return_tensors="pt",
 ).to(self.device)[:, 1:-1]
 
+
 6. test with from antiberty import AntiBERTyRunner
 antiberty = AntiBERTyRunner()
 sequences = ["EVQLVQSGPEVKKPGTSVKVSCKASGFTFMSSAVQWVRQARGQRLEWIGWIVIGSGNTNYAQKFQERVTITRDMSTSTAYMELSSLRSEDTAVYYCAAPYCSSISCNDGFDIWGQGTMVTVS"]
@@ -189,3 +190,85 @@ None
 For CPU only
 pip install torch-scatter torch-sparse torch-geometric \
   -f https://data.pyg.org/whl/torch-2.5.1+cpu.html
+
+
+Observation:
+Left: Unrelaxed structure
+Right: PyRosetta-relaxed structure
+The key difference is how PyRosetta's relaxed structure affects agreement between PyRosetta and other models:
+
+Model Pair	Correlation (Unrelaxed)	Correlation (Relaxed)	Change
+PyRosetta vs Ablang	0.097	0.11	⬆ slight increase
+PyRosetta vs Antifold	0.20	0.28	⬆ improved
+PyRosetta vs ESM1f	0.33	0.37	⬆ improved
+PyRosetta vs ESM1v	0.12	0.15	⬆ slight
+PyRosetta vs Nanobert	0.081	0.099	⬆ slight
+
+For other models (not involving PyRosetta), correlations remain similar.
+
+Conclusions:
+PyRosetta's agreement with other models improves slightly after relaxation.
+
+This is most notable with Antifold (0.20 → 0.28) and ESM1f (0.33 → 0.37).
+
+Suggests that relaxing the structure may reduce noise in PyRosetta’s ΔΔG calculations, making its energetic predictions more consistent with ML-based models trained on fixed backbones.
+
+Correlations are still relatively low between PyRosetta and other models.
+
+Even after relaxation, PyRosetta’s highest correlation is ~0.37 (with ESM1f).
+
+This reflects the fundamental difference in modeling philosophy:
+
+ML models predict mutational effects from sequence or minimal structure.
+
+PyRosetta relies on energy minimization and atomistic modeling, which can diverge from statistical learning.
+
+Inter-ML model correlations are high and unaffected by relaxation.
+
+Ablang/ESM1v and Antifold/ESM1f correlations remain strong (>0.6–0.8), indicating robust agreement across different sequence-based or structure-informed models.
+
+Final Thought:
+Using relaxed structures marginally improves compatibility between PyRosetta and ML-based models, but they remain fundamentally distinct tools. PyRosetta may capture structural physics not easily inferred from ML embeddings, and thus can provide complementary insights, especially when physical stability is key.
+
+What the Correlation Results Say:
+1. ML models (Ablang, ESM1v, Antifold, etc.) correlate well with each other
+Correlations between ML models (especially ESM1v–Ablang, Antifold–ESM1f) remain high across both unrelaxed and relaxed structures (e.g., 0.8+).
+
+This shows internal consistency among models trained on sequence or learned embeddings.
+
+2. PyRosetta shows low correlation with ML models
+Even after structure relaxation, correlation with others stays below 0.4.
+
+PyRosetta vs Ablang: ~0.097 → 0.11
+
+PyRosetta vs Antifold: ~0.20 → 0.28
+
+PyRosetta vs ESM1f: ~0.33 → 0.37
+
+Slight improvement after relaxation, but overall still weak agreement.
+
+3. Relaxation improves correlation marginally
+You gain small but consistent increases in correlation with ML models after relaxing the structure.
+
+This implies PyRosetta’s ΔΔG predictions are sensitive to atomic detail and clash resolution, while ML models are robust to structure noise.
+
+Interpretation in the Context of VHH Design:
+Factor	Insight
+ML model agreement	Strong correlation suggests you can trust ML models (e.g. ESM1v, Ablang) for relative mutation effects.
+PyRosetta's unique signal	Its lower correlation suggests it brings a complementary signal, possibly more focused on structural energetics rather than evolutionary or language-based reasoning.
+Structure relaxation matters	While ML models are relatively indifferent to relaxation, PyRosetta benefits from it. If using PyRosetta, relax first.
+VHH-specific caveat	Nanobodies are highly stable and compact—mutations can have subtle structural effects that PyRosetta may capture better than sequence-only models.
+Use case synergy	You could use ML models for broad filtering and PyRosetta for fine-grained energetic validation (especially when expression/stability is critical).
+
+Recommendations:
+Use ML models (ESM1v, Ablang, Antifold) for high-throughput scoring
+They provide consensus and are fast.
+
+Use PyRosetta (with relaxation) as a final filter
+Especially if you want to prioritize folding stability, interface binding, or core mutations.
+
+Look at outliers where PyRosetta disagrees with ML models
+These could be structurally important mutations (e.g. buried residues or H-bond networks) that are missed by ML models.
+
+Consider integrating experimental validation
+If you can validate a few mutants, you’ll know which model is most trustworthy for VHHs in your context.

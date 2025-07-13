@@ -1,0 +1,7 @@
+[2025-07-13 11:25:23,161] Running inverse folding on PDB/CIFs ...
+[2025-07-13 11:25:30,516] Loaded model to cuda.
+[2025-07-13 11:25:30,522] NOTE: Custom chain mode enabled. Will run specified chain(s).
+[2025-07-13 11:25:30,523] Reading in (1) PDBs from DataFrame
+[2025-07-13 11:25:30,734] Predicting batch 1/1: PDBs 1-1 out of 1 total
+[2025-07-13 11:25:32,282] Saving 1 CSVs to /home/eva/0_point_mutation/results/antifold
+[2025-07-13 11:25:32,288] Writing Caplacizumab_H per-residue log probs CSV to /home/eva/0_point_mutation/results/antifold/Caplacizumab_H.csv

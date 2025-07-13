@@ -23,7 +23,7 @@ except Exception:
 # CONFIGURATION
 # =============================
 MODE = "vhh"   # auto (for all), vhh, mab
-MODEL_TYPE = "antiberta"  # ablang, esm1v, esm1f, antiberta, antifold, nanobert, pyrosetta, lm_design
+MODEL_TYPE = "pyrosetta"  # ablang, esm1v, esm1f, antiberta, antifold, nanobert, pyrosetta, lm_design (weird, dont use), tempro
 
 INPUT_CSV = "/home/eva/0_point_mutation/results/TheraSAbDab_SeqStruc_OnlineDownload.csv"
 OUTPUT = f"/home/eva/0_point_mutation/results/{MODEL_TYPE}/{MODE}_{MODEL_TYPE}.csv"
@@ -120,6 +120,14 @@ def run_abodybuilder2(vh_seq, vl_seq, output_path):
     model = predictor.predict({'H': vh_seq, 'L': vl_seq} if vl_seq else {'H': vh_seq})
     model.save(output_path)
     print(f"Saved structure to {output_path}")
+    # Perform renumbering
+    renumber_pdb_sequential(output_path)
+
+    # Call relax using conda environment
+    relaxed_script = os.path.abspath("pyrosetta_relax.py")
+    subprocess.run([
+        "conda", "run", "-n", "pyrosetta", "python", relaxed_script, output_path
+    ], check=True)
 
 def renumber_pdb_sequential(pdb_path, output_path=None):
     """
@@ -186,9 +194,7 @@ def mutation_scan_paired(antiberty, vh_seq, vl_seq=None, batch_size=16):
         # antiberty.tokenizer.encode(...): converts each sequence to a list of token IDs
         # torch.tensor(...).to(device): puts each tokenized tensor on the same device as AntiBERTy model
         # Pass the list of tensors (flat_encoded) to the model.
-        device = antiberty.device
-        flat_encoded = [torch.tensor(antiberty.tokenizer.encode(s)).to(device) for s in flat]
-        mut_plls = antiberty.pseudo_log_likelihood(flat_encoded, batch_size=batch_size)
+        mut_plls = antiberty.pseudo_log_likelihood(flat, batch_size=batch_size)
 
         for idx, (chain, pos, wt, mt) in enumerate(info):
             records.append({
@@ -285,14 +291,13 @@ def main():
                 mut_df.to_csv(OUTPUT, sep="\t", mode="a", header=not os.path.exists(OUTPUT), index=False)
                 print(f"Results for {name} written to {OUTPUT}")
 
-            elif MODEL_TYPE in ["antifold", "esm1v", "esm1f", "nanobert", "pyrosetta", "lm_design"]:
+            elif MODEL_TYPE in ["antifold", "esm1v", "esm1f", "nanobert", "pyrosetta", "lm_design", "tempro"]:
                 pdbfile = os.path.join(PDB_OUTPUT_DIR, f"{name}.pdb")
                 if MODEL_TYPE in ["antifold", "pyrosetta", "lm_design", "esm1f"]:
                     if not os.path.exists(pdbfile):
                         print(f"Generating PDB for {name} → {pdbfile}")
                         vl_clean = None if vl in ["", "NA", "na", None] else vl
                         run_abodybuilder2(vh, vl_clean if format_type == "VHVL" else None, pdbfile)
-                        renumber_pdb_sequential(pdbfile)
                     else:
                         print(f"PDB file already exists for {name}, skipping ABodyBuilder.")
 
@@ -302,7 +307,8 @@ def main():
                     "nanobert": ("nanobert_worker.py", "antiberty"),
                     "esm1v": ("esm1v_worker.py", "esm"),
                     "esm1f": ("esm1f_worker.py", "esm1f"),
-                    "lm_design": ("lm_design_worker.py", "lm_design")
+                    "lm_design": ("lm_design_worker.py", "lm_design"),
+                    "tempro": ("thermo_worker.py", "esm")
                 }
                 worker_script, env = script_map[MODEL_TYPE]
                 worker_args = [

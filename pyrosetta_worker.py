@@ -99,14 +99,14 @@ def compute_ddg(pdb_path, chain_id):
                 ddg = mut_score - wt_score
 
                 results.append({
-                    "residue_index": i,
+                    "pos": i,
                     "chain": chain_id,
                     "wt": wt,
-                    "mut": aa,
+                    "mt": aa,
                     "wt_score": wt_score,
                     "mut_score": mut_score,
                     "ddG": ddg,
-                    "neg_ddG": -ddg  # for log-likelihood comparisons
+                    "delta_neg_ddG_pyrosetta": -ddg  # for log-likelihood comparisons
                 })
 
             except Exception as e:
@@ -149,6 +149,7 @@ def main():
         print(f"Running PyRosetta ddG for Nanobody (VH only)")
         df_vh = compute_ddg(pdb_path, chain_id="H")
         df_vh["region"] = "VH"
+        df_vh["name"] = sample_name
         df_vh = assign_chain_from_region(df_vh)
         all_results.append(df_vh)
 
@@ -156,11 +157,13 @@ def main():
         print(f"Running PyRosetta ddG for VHVL (VH + VL)")
         df_vh = compute_ddg(pdb_path, chain_id="H")
         df_vh["region"] = "VH"
+        df_vh["name"] = sample_name  # Add sample name
         df_vh = assign_chain_from_region(df_vh)
         all_results.append(df_vh)
 
         df_vl = compute_ddg(pdb_path, chain_id="L")
         df_vl["region"] = "VL"
+        df_vl["name"] = sample_name
         df_vl = assign_chain_from_region(df_vl)
         all_results.append(df_vl)
 

@@ -8,7 +8,7 @@ import numpy as np
 # -----------------------------
 # Load and preprocess CSV files
 # -----------------------------
-files = glob.glob('csv_folder/vhh/*.csv')
+files = glob.glob('/home/eva/0_point_mutation/csv_folder/vhh/20250713_bb_sc_relax_5/*.csv')
 dfs = []
 
 for file in files:
@@ -53,11 +53,18 @@ melted = data.melt(
 )
 
 melted = melted[melted.apply(lambda x: x['delta_type'].endswith(x['model']), axis=1)]
+mask = melted.apply(lambda x: str(x["delta_type"]).endswith(str(x["model"])), axis=1)
+print("Filtered out rows (delta_type vs model):")
+print(melted[~mask][['delta_type', 'model']].drop_duplicates())
+melted = melted[mask]
 combined = melted.copy()
 combined = combined[combined["model"] != "sum"]
 combined = combined[~combined['chain'].isin(['L', 'VL'])]
 
 combined_filtered = combined.copy()
+print("Models found in data:", combined_filtered["model"].unique())
+print("Pyrosetta row count:", len(combined_filtered[combined_filtered["model"] == "pyrosetta"]))
+
 # -----------------------------
 # Build Kabat mapping
 # -----------------------------
@@ -81,7 +88,7 @@ for seq_idx, (pos_obj, aa) in enumerate(heavy_chain.positions.items(), start=1):
 # Plotting
 # -----------------------------
 thresholds = {"ablang": 0}
-all_models = ['ablang', 'antiberta', 'antifold', 'design', 'esm2', 'nanobert', 'pyrosetta']
+all_models = sorted(combined_filtered["model"].dropna().unique().tolist())
 
 for sample_name, df_sample in combined_filtered.groupby("sample"):
     df_all = df_sample.copy()
@@ -102,7 +109,7 @@ for sample_name, df_sample in combined_filtered.groupby("sample"):
         df_pos_fixed,
         col="model",
         col_order=all_models,
-        col_wrap=7,
+        col_wrap=2,
         height=4,
         sharey=False,
         sharex=False
@@ -167,7 +174,7 @@ for sample_name, df_sample in combined_filtered.groupby("sample"):
         df_neg_fixed,
         col="model",
         col_order=all_models,
-        col_wrap=7,
+        col_wrap=2,
         height=4,
         sharey=False,
         sharex=False
@@ -209,4 +216,36 @@ for sample_name, df_sample in combined_filtered.groupby("sample"):
     plt.savefig(f"{sample_name}_negative_only.png", dpi=300)
     plt.close()
 
-print("✅ All positive and negative plots generated.")
+print(" All positive and negative plots generated.")
+
+# -----------------------------
+# Correlation Across Models
+# -----------------------------
+print("\nCorrelation of delta values across models:")
+
+# Pivot the combined_filtered dataframe: one row per mutation, columns = models
+pivot_df = combined_filtered.pivot_table(
+    index=['sample', 'chain', 'pos', 'wt', 'mt'],
+    columns='model',
+    values='delta_value'
+).reset_index()
+
+# Drop rows where all model delta values are NaN
+pivot_df = pivot_df.dropna(subset=all_models, how='all')
+
+# Compute correlation matrix
+corr_matrix = pivot_df[all_models].corr(method='pearson')
+
+print(corr_matrix)
+
+# Optional: save correlation matrix to CSV
+corr_matrix.to_csv("model_delta_correlation_matrix.csv")
+
+# Optional: plot heatmap
+plt.figure(figsize=(8, 6))
+sns.heatmap(corr_matrix, annot=True, cmap="coolwarm", center=0)
+plt.title("Correlation of Delta Values Between Models")
+plt.tight_layout()
+plt.savefig("correlation_heatmap.png", dpi=300)
+plt.close()
+
