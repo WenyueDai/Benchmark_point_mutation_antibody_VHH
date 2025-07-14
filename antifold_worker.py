@@ -50,10 +50,7 @@ def main():
         sys.exit(1)
 
     if format_type == "Nanobody":
-        if len(chains) != 1:
-            print(f"ERROR: expected exactly 1 chain for Nanobody, found: {chains}")
-            sys.exit(1)
-        chain = chains[0]
+        chain = 'H'
         print(f"Detected nanobody chain: {chain}")
         cmd = [
             "python", "-m", "antifold.main",

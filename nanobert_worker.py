@@ -75,10 +75,11 @@ def main():
 
     output_dir = "/home/eva/0_point_mutation/results/nanobert"
     os.makedirs(output_dir, exist_ok=True)
-    out_file = os.path.join(output_dir, f"{sample_name}_nanobert.csv")
-    df.to_csv(out_file, sep="\t", index=False)
-
-    print(f"Wrote nanoBERT tidy CSV to {out_file}")
+    # out_file = os.path.join(output_dir, f"{sample_name}_nanobert.csv")
+    # df.to_csv(out_file, sep="\t", index=False)
+    combined_csv = os.path.join(output_dir, f"{format_type}_nanobert.csv")
+    df.to_csv(combined_csv, mode="a", index=False, header=False)
+    print(f"Wrote nanoBERT tidy CSV to {combined_csv}")
 
 if __name__ == "__main__":
     main()

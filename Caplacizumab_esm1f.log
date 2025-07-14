@@ -1,0 +1,63 @@
+2025-07-14 22:23:40,064 [INFO] Starting ESM-IF1 scan on 'Caplacizumab', mutating chains ['H']
+2025-07-14 22:23:40,065 [INFO] Loading ESM-IF1 model...
+2025-07-14 22:23:45,063 [INFO] Running on CPU.
+2025-07-14 22:23:45,063 [INFO] Parsing PDB structure from pdbs/Caplacizumab.pdb
+2025-07-14 22:23:45,160 [INFO] Loaded 2 chains: H, M
+2025-07-14 22:23:45,160 [INFO] Scoring wild-type complex and each chain's sequence...
+2025-07-14 22:23:49,775 [INFO] WT LL - Complex: -0.9759 | Chain H: -0.8060
+2025-07-14 22:23:49,775 [INFO] Beginning mutation scan...
+
+2025-07-14 22:23:49,775 [INFO] 🔧 Mutating chain H, length 128
+2025-07-14 22:23:54,332 [INFO] E1A | ΔLL (complex): -0.0029 | ΔLL (chain H): -0.0052
+2025-07-14 22:23:59,297 [INFO] E1C | ΔLL (complex): -0.0135 | ΔLL (chain H): -0.0349
+2025-07-14 22:24:03,484 [INFO] E1D | ΔLL (complex): -0.0007 | ΔLL (chain H): 0.0000
+2025-07-14 22:24:07,596 [INFO] E1F | ΔLL (complex): -0.0135 | ΔLL (chain H): -0.0341
+2025-07-14 22:24:12,075 [INFO] E1G | ΔLL (complex): 0.0014 | ΔLL (chain H): 0.0043
+2025-07-14 22:24:16,580 [INFO] E1H | ΔLL (complex): -0.0070 | ΔLL (chain H): -0.0173
+2025-07-14 22:24:20,893 [INFO] E1I | ΔLL (complex): -0.0170 | ΔLL (chain H): -0.0415
+2025-07-14 22:24:25,475 [INFO] E1K | ΔLL (complex): -0.0102 | ΔLL (chain H): -0.0259
+2025-07-14 22:24:29,654 [INFO] E1L | ΔLL (complex): -0.0112 | ΔLL (chain H): -0.0294
+2025-07-14 22:24:33,677 [INFO] E1M | ΔLL (complex): -0.0092 | ΔLL (chain H): -0.0209
+2025-07-14 22:24:37,178 [INFO] E1N | ΔLL (complex): -0.0062 | ΔLL (chain H): -0.0127
+2025-07-14 22:24:41,146 [INFO] E1P | ΔLL (complex): -0.0032 | ΔLL (chain H): -0.0081
+2025-07-14 22:24:45,276 [INFO] E1Q | ΔLL (complex): -0.0061 | ΔLL (chain H): -0.0144
+2025-07-14 22:24:49,143 [INFO] E1R | ΔLL (complex): -0.0123 | ΔLL (chain H): -0.0311
+2025-07-14 22:24:53,395 [INFO] E1S | ΔLL (complex): 0.0006 | ΔLL (chain H): 0.0024
+2025-07-14 22:24:57,584 [INFO] E1T | ΔLL (complex): -0.0076 | ΔLL (chain H): -0.0164
+2025-07-14 22:25:01,579 [INFO] E1V | ΔLL (complex): -0.0115 | ΔLL (chain H): -0.0277
+2025-07-14 22:25:05,488 [INFO] E1W | ΔLL (complex): -0.0167 | ΔLL (chain H): -0.0430
+2025-07-14 22:25:09,473 [INFO] E1Y | ΔLL (complex): -0.0150 | ΔLL (chain H): -0.0357
+2025-07-14 22:25:13,235 [INFO] V2A | ΔLL (complex): -0.0340 | ΔLL (chain H): -0.0880
+2025-07-14 22:25:17,142 [INFO] V2C | ΔLL (complex): -0.0272 | ΔLL (chain H): -0.0743
+2025-07-14 22:25:21,191 [INFO] V2D | ΔLL (complex): -0.0373 | ΔLL (chain H): -0.0961
+2025-07-14 22:25:25,364 [INFO] V2E | ΔLL (complex): -0.0252 | ΔLL (chain H): -0.0663
+2025-07-14 22:25:29,263 [INFO] V2F | ΔLL (complex): -0.0323 | ΔLL (chain H): -0.0847
+2025-07-14 22:25:33,415 [INFO] V2G | ΔLL (complex): -0.0480 | ΔLL (chain H): -0.1242
+2025-07-14 22:25:37,505 [INFO] V2H | ΔLL (complex): -0.0324 | ΔLL (chain H): -0.0860
+2025-07-14 22:25:41,549 [INFO] V2I | ΔLL (complex): -0.0106 | ΔLL (chain H): -0.0268
+2025-07-14 22:25:45,762 [INFO] V2K | ΔLL (complex): -0.0297 | ΔLL (chain H): -0.0772
+2025-07-14 22:25:49,830 [INFO] V2L | ΔLL (complex): -0.0231 | ΔLL (chain H): -0.0612
+2025-07-14 22:25:53,595 [INFO] V2M | ΔLL (complex): -0.0273 | ΔLL (chain H): -0.0703
+2025-07-14 22:25:57,600 [INFO] V2N | ΔLL (complex): -0.0342 | ΔLL (chain H): -0.0879
+2025-07-14 22:26:01,700 [INFO] V2P | ΔLL (complex): -0.0448 | ΔLL (chain H): -0.1175
+2025-07-14 22:26:05,746 [INFO] V2Q | ΔLL (complex): -0.0289 | ΔLL (chain H): -0.0752
+2025-07-14 22:26:09,638 [INFO] V2R | ΔLL (complex): -0.0277 | ΔLL (chain H): -0.0724
+2025-07-14 22:26:13,657 [INFO] V2S | ΔLL (complex): -0.0416 | ΔLL (chain H): -0.1082
+2025-07-14 22:26:17,692 [INFO] V2T | ΔLL (complex): -0.0226 | ΔLL (chain H): -0.0573
+2025-07-14 22:26:21,487 [INFO] V2W | ΔLL (complex): -0.0310 | ΔLL (chain H): -0.0817
+2025-07-14 22:26:25,522 [INFO] V2Y | ΔLL (complex): -0.0329 | ΔLL (chain H): -0.0836
+2025-07-14 22:26:29,091 [INFO] Q3A | ΔLL (complex): -0.0006 | ΔLL (chain H): -0.0023
+2025-07-14 22:26:32,841 [INFO] Q3C | ΔLL (complex): -0.0083 | ΔLL (chain H): -0.0242
+2025-07-14 22:26:36,817 [INFO] Q3D | ΔLL (complex): -0.0032 | ΔLL (chain H): -0.0082
+2025-07-14 22:26:40,892 [INFO] Q3E | ΔLL (complex): 0.0001 | ΔLL (chain H): -0.0012
+2025-07-14 22:26:44,928 [INFO] Q3F | ΔLL (complex): -0.0001 | ΔLL (chain H): -0.0014
+2025-07-14 22:26:49,105 [INFO] Q3G | ΔLL (complex): -0.0095 | ΔLL (chain H): -0.0249
+2025-07-14 22:26:53,450 [INFO] Q3H | ΔLL (complex): -0.0003 | ΔLL (chain H): -0.0024
+2025-07-14 22:26:57,460 [INFO] Q3I | ΔLL (complex): -0.0028 | ΔLL (chain H): -0.0061
+2025-07-14 22:27:01,470 [INFO] Q3K | ΔLL (complex): 0.0015 | ΔLL (chain H): 0.0028
+2025-07-14 22:27:06,023 [INFO] Q3L | ΔLL (complex): -0.0003 | ΔLL (chain H): -0.0019
+2025-07-14 22:27:09,983 [INFO] Q3M | ΔLL (complex): -0.0047 | ΔLL (chain H): -0.0129
+2025-07-14 22:27:13,912 [INFO] Q3N | ΔLL (complex): -0.0009 | ΔLL (chain H): -0.0009
+2025-07-14 22:27:17,905 [INFO] Q3P | ΔLL (complex): -0.0228 | ΔLL (chain H): -0.0600
+2025-07-14 22:27:21,862 [INFO] Q3R | ΔLL (complex): 0.0033 | ΔLL (chain H): 0.0074
+2025-07-14 22:27:25,890 [INFO] Q3S | ΔLL (complex): 0.0022 | ΔLL (chain H): 0.0047
