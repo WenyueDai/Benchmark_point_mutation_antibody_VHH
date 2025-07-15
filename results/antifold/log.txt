@@ -1,33 +1,7 @@
-[2025-07-14 08:16:56,405] Running inverse folding on PDB/CIFs ...
-[2025-07-14 08:16:59,406] Loaded model to cuda.
-[2025-07-14 08:16:59,411] NOTE: Custom chain mode enabled. Will run specified chain(s).
-[2025-07-14 08:16:59,411] Reading in (1) PDBs from DataFrame
-[2025-07-14 08:16:59,450] Prediction encountered an unexpected error: Chain H not found in input file
-Traceback (most recent call last):
-  File "/home/eva/miniconda3/envs/antifold/lib/python3.10/site-packages/antifold/main.py", line 515, in <module>
-    main(args)
-  File "/home/eva/miniconda3/envs/antifold/lib/python3.10/site-packages/antifold/main.py", line 464, in main
-    pdb_output_dict = sample_pdbs(
-  File "/home/eva/miniconda3/envs/antifold/lib/python3.10/site-packages/antifold/main.py", line 217, in sample_pdbs
-    df_logits_list = get_pdbs_logits(
-  File "/home/eva/miniconda3/envs/antifold/lib/python3.10/site-packages/antifold/antiscripts.py", line 526, in get_pdbs_logits
-    predictions_list, embeddings_list = dataset_dataloader_to_predictions_list(
-  File "/home/eva/miniconda3/envs/antifold/lib/python3.10/site-packages/antifold/antiscripts.py", line 295, in dataset_dataloader_to_predictions_list
-    for bi, batch in enumerate(dataloader):
-  File "/home/eva/miniconda3/envs/antifold/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 631, in __next__
-    data = self._next_data()
-  File "/home/eva/miniconda3/envs/antifold/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 675, in _next_data
-    data = self._dataset_fetcher.fetch(index)  # may raise StopIteration
-  File "/home/eva/miniconda3/envs/antifold/lib/python3.10/site-packages/torch/utils/data/_utils/fetch.py", line 51, in fetch
-    data = [self.dataset[idx] for idx in possibly_batched_index]
-  File "/home/eva/miniconda3/envs/antifold/lib/python3.10/site-packages/torch/utils/data/_utils/fetch.py", line 51, in <listcomp>
-    data = [self.dataset[idx] for idx in possibly_batched_index]
-  File "/home/eva/miniconda3/envs/antifold/lib/python3.10/site-packages/antifold/if1_dataset.py", line 232, in __getitem__
-    coords, seq_pdb, pos_pdb, pos_pdb_arr_str = self.load_coords_any(
-  File "/home/eva/miniconda3/envs/antifold/lib/python3.10/site-packages/antifold/if1_dataset.py", line 99, in load_coords_any
-    coords_dict, seq_dict, pos_dict, posinschain_dict = load_complex_coords(
-  File "/home/eva/miniconda3/envs/antifold/lib/python3.10/site-packages/antifold/esm_multichain_util_custom.py", line 118, in load_complex_coords
-    structure = load_structure(fpath, chains)
-  File "/home/eva/miniconda3/envs/antifold/lib/python3.10/site-packages/antifold/esm/inverse_folding/util.py", line 55, in load_structure
-    raise ValueError(f"Chain {chain} not found in input file")
-ValueError: Chain H not found in input file
+[2025-07-15 21:08:20,163] Running inverse folding on PDB/CIFs ...
+[2025-07-15 21:08:23,291] Loaded model to cuda.
+[2025-07-15 21:08:23,293] NOTE: Custom chain mode enabled. Will run specified chain(s).
+[2025-07-15 21:08:23,293] Reading in (1) PDBs from DataFrame
+[2025-07-15 21:08:23,383] Predicting batch 1/1: PDBs 1-1 out of 1 total
+[2025-07-15 21:08:24,239] Saving 1 CSVs to /home/eva/0_point_mutation/results/antifold
+[2025-07-15 21:08:24,242] Writing Caplacizumab_A per-residue log probs CSV to /home/eva/0_point_mutation/results/antifold/Caplacizumab_A.csv

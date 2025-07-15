@@ -27,7 +27,7 @@ except Exception:
 # =============================
 MODE = "vhh"   # auto (for all), vhh, mab
 ORDER = "H,M"  # chain order for protein complex to consider for log likelihood calculation, 
-MODEL_TYPES = ['esm1f']  # ablang, esm1v, esm1f, antiberta, antifold, nanobert, pyrosetta, lm_design (weird, dont use), tempro
+MODEL_TYPES = ['antifold']  # ablang, esm1v, esm1f, antiberta, antifold, nanobert, pyrosetta, lm_design (weird, dont use), tempro
 
 INPUT_CSV = "/home/eva/0_point_mutation/results/C_only.csv"
 PDB_OUTPUT_DIR = "/home/eva/0_point_mutation/pdbs"
@@ -297,7 +297,7 @@ def main():
                     mut_df.to_csv(OUTPUT, sep="\t", mode="a", header=not os.path.exists(OUTPUT), index=False)
                     print(f"Results for {name} written to {OUTPUT}")
 
-                elif MODEL_TYPE in ["antifold", "esm1v", "nanobert", "pyrosetta", "lm_design", "tempro"]:
+                elif MODEL_TYPE in ["esm1v", "nanobert", "pyrosetta", "lm_design", "tempro"]:
                     pdbfile = os.path.join(PDB_OUTPUT_DIR, f"{name}.pdb")
                     if MODEL_TYPE in ["antifold", "pyrosetta", "lm_design", "esm1f"]:
                         if not os.path.exists(pdbfile):
@@ -308,7 +308,6 @@ def main():
                             print(f"PDB file already exists for {name}, skipping ABodyBuilder.")
 
                     script_map = {
-                        "antifold": ("antifold_worker.py", "antifold"),
                         "pyrosetta": ("pyrosetta_worker.py", "pyrosetta"),
                         "nanobert": ("nanobert_worker.py", "antiberty"),
                         "esm1v": ("esm1v_worker.py", "esm"),
@@ -324,6 +323,36 @@ def main():
                     print(f"Launching: {' '.join(worker_args)}")
                     subprocess.run(worker_args, check=True)
                     
+                elif MODEL_TYPE in ["antifold"]:
+                    pdbfile = os.path.join(PDB_OUTPUT_DIR, f"{name}.pdb")
+                    if not os.path.exists(pdbfile):
+                        print(f"Generating PDB for {name} → {pdbfile}")
+                        vl_clean = None if vl in ["", "NA", "na", None] else vl
+                        run_abodybuilder2(vh, vl_clean if format_type == "VHVL" else None, pdbfile)
+                    else:
+                        renumber_pdb_sequential(pdbfile)
+                        print(f"PDB file already exists for {name}, skipping ABodyBuilder, but renumbering.")
+
+                    script_map = {
+                        "antifold": ("antifold_worker.py", "antifold"),
+                    }
+                    worker_script, env = script_map[MODEL_TYPE]
+
+                    vl_clean = "NA"
+                    if format_type == "VHVL":
+                        vl_clean = vl if vl not in ["", "NA", "na", None] else "NA"
+
+                    mutate_str = "H" if format_type == "Nanobody" else "H,L"
+
+                    worker_args = [
+                        "conda", "run", "-n", env, "python", worker_script,
+                        name, vh, vl_clean,
+                        "--mutate", mutate_str, "--format", format_type
+                    ]
+
+                    print(f"Launching: {' '.join(worker_args)}")
+                    subprocess.run(worker_args, check=True)
+
 
                 elif MODEL_TYPE in ["esm1f"]:
                     pdbfile = os.path.join(PDB_OUTPUT_DIR, f"{name}.pdb")

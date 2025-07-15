@@ -57,3 +57,6 @@ MIT License
     * From pdb database, VHH-antigen complex, remove antigen
     * From pdb database, VHH-antigen complex, relax recycle=5, point mutation VHH only
     * From pdb database, VHH-antigen complex, remove antigen, relax VHH recycle=5, point mutation VHH only
+
+2. Thorough examine esm1f on above cases, apply the same structure to antifold and pyrosetta
+3. lm_design examples acn be found in esm repo, use both sequence and structure loss

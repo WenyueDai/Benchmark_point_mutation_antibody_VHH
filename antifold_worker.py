@@ -2,88 +2,76 @@
 
 import sys
 import os
-import gemmi
+import argparse
+import logging
 import subprocess
+import gemmi
 import pandas as pd
 
-PDB_INPUT_DIR = "/home/eva/0_point_mutation/pdbs"  # Adjust if needed
+PDB_INPUT_DIR = "/home/eva/0_point_mutation/pdbs"
 ANTIFOLD_OUTPUT_DIR = "/home/eva/0_point_mutation/results/antifold"
+AAs = list("ACDEFGHIKLMNPQRSTVWY")
 
-def main():
-    if len(sys.argv) != 5:
-        print("Usage: python antifold_worker.py <sample_name> <vh_seq> <vl_seq_or_NA> <format_type>")
-        sys.exit(1)
+# Logging setup
+logger = logging.getLogger("antifold_logger")
+logger.setLevel(logging.INFO)
+log_formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+log_handler = None
 
-    sample_name = sys.argv[1]
-    vh_seq = sys.argv[2]   # Ignored here
-    vl_seq = sys.argv[3]   # Ignored here
-    format_type = sys.argv[4]
+def convert_to_cif(pdb_file, cif_file):
+    try:
+        st = gemmi.read_structure(pdb_file)
+        st.setup_entities()
+        st.make_mmcif_document().write_file(cif_file)
+        logger.info(f"Converted {pdb_file} to {cif_file}")
+        return cif_file
+    except Exception as e:
+        logger.error(f"Failed to convert to mmCIF: {e}")
+        return pdb_file
 
-    print(f"DEBUG: running antifold on sample '{sample_name}', format={format_type}")
-
-    pdb_file = os.path.join(PDB_INPUT_DIR, f"{sample_name}.pdb")
-    cif_file = os.path.join(ANTIFOLD_OUTPUT_DIR, f"{sample_name}.cif")
-
-    if not os.path.exists(pdb_file):
-        print(f"ERROR: missing PDB file: {pdb_file}")
-        sys.exit(1)
-
-    if not os.path.exists(cif_file):
-        print(f"Converting {pdb_file} to mmCIF with gemmi...")
-        try:
-            st = gemmi.read_structure(pdb_file)
-            st.setup_entities()
-            st.make_mmcif_document().write_file(cif_file)
-            print(f"Converted to {cif_file}")
-        except Exception as e:
-            print(f"ERROR during CIF conversion: {e}")
-            print("Falling back to using the PDB directly.")
-            cif_file = pdb_file
-    else:
-        print(f"Using existing CIF: {cif_file}")
-
+def run_antifold(cif_file, format_type):
     try:
         structure = gemmi.read_structure(cif_file)
         chains = [chain.name for chain in structure[0]]
+        logger.info(f"Detected chains in structure: {chains}")
     except Exception as e:
-        print(f"ERROR reading structure from {cif_file}: {e}")
+        logger.error(f"Could not read CIF structure: {e}")
         sys.exit(1)
 
-    if format_type == "Nanobody":
-        chain = 'H'
-        print(f"Detected nanobody chain: {chain}")
+    if format_type.lower() == "nanobody":
+        if len(chains) < 1:
+            logger.error("Nanobody format requires at least one chain.")
+            sys.exit(1)
+        chain = chains[0]
+        logger.info(f"Running AntiFold on nanobody chain: {chain}")
         cmd = [
             "python", "-m", "antifold.main",
             "--pdb_file", cif_file,
             "--nanobody_chain", chain,
             "--out_dir", ANTIFOLD_OUTPUT_DIR
         ]
-    elif format_type == "VHVL":
+    elif format_type.lower() == "vhvl":
         if len(chains) < 2:
-            print(f"ERROR: expected at least 2 chains for VHVL, found: {chains}")
+            logger.error("VHVL format requires at least two chains.")
             sys.exit(1)
-        heavy_chain = chains[0]
-        light_chain = chains[1]
-        print(f"Detected heavy chain: {heavy_chain}, light chain: {light_chain}")
+        heavy, light = chains[0], chains[1]
+        logger.info(f"Running AntiFold on VH/VL chains: H={heavy}, L={light}")
         cmd = [
             "python", "-m", "antifold.main",
             "--pdb_file", cif_file,
-            "--heavy_chain", heavy_chain,
-            "--light_chain", light_chain,
+            "--heavy_chain", heavy,
+            "--light_chain", light,
             "--out_dir", ANTIFOLD_OUTPUT_DIR
         ]
     else:
-        print("ERROR: Only 'Nanobody' and 'VHVL' format types are supported.")
+        logger.error(f"Unsupported format type: {format_type}")
         sys.exit(1)
 
-    print(f"Executing: {' '.join(cmd)}")
-    try:
-        subprocess.run(cmd, check=True)
-        print("Antifold run complete.")
-    except subprocess.CalledProcessError as e:
-        print(f"ERROR running antifold: {e}")
-        sys.exit(1)
+    logger.info(f"Executing AntiFold: {' '.join(cmd)}")
+    subprocess.run(cmd, check=True)
+    logger.info("AntiFold run complete.")
 
+def parse_antifold_csv(sample_name, format_type):
     # tidy csv transform
     try:
         available_csvs = [
@@ -114,9 +102,10 @@ def main():
                 pos = row["pdb_pos"]
                 chain_label = row["pdb_chain"]
                 wt = row["pdb_res"]
-                wt_ll = row[wt] if wt in aas else None
-                if wt_ll is None:
+                if wt not in aas or wt not in af.columns:
+                    logger.warning(f"Skipping row at pos {pos} with unknown wt residue: {wt}")
                     continue
+                wt_ll = row[wt]
                 for mt in aas:
                     mut_ll = row[mt]
                     delta = mut_ll - wt_ll
@@ -125,9 +114,6 @@ def main():
                     ))
 
             tidy_df = pd.DataFrame(records, columns=output_columns)
-            tidy_path = os.path.join(ANTIFOLD_OUTPUT_DIR, f"{sample_name}_tidy.csv")
-            tidy_df.to_csv(tidy_path, index=False, sep="\t")
-            print(f"Wrote tidy AntiFold-style CSV to {tidy_path}")
 
             combined_tidy = os.path.join(ANTIFOLD_OUTPUT_DIR, f"{format_type}_antifold.csv")
             if not os.path.exists(combined_tidy):
@@ -140,6 +126,57 @@ def main():
     except Exception as e:
         print(f"ERROR while transforming tidy CSV: {e}")
         sys.exit(1)
+
+
+
+def main():
+    parser = argparse.ArgumentParser(description="AntiFold mutation scan using PDB input")
+    parser.add_argument("sample_name", type=str, help="Sample name (PDB filename without extension)")
+    parser.add_argument("vh_seq", type=str, help="VH sequence (ignored)")
+    parser.add_argument("vl_seq", type=str, help="VL sequence or 'NA' (ignored)")
+    parser.add_argument("--mutate", required=True, help="Comma-separated list of chains to mutate (e.g., H,L)")
+    parser.add_argument("--format", required=True, choices=["Nanobody", "VHVL"], help="Input format type")
+
+    args = parser.parse_args()
+    sample_name = args.sample_name
+    chains_to_mutate = args.mutate.split(",")
+    format_type = args.format
+
+    # Setup log file
+    global log_handler
+    log_file = os.path.join(ANTIFOLD_OUTPUT_DIR, f"{sample_name}_antifold.log")
+    log_handler = logging.FileHandler(log_file, mode="w")
+    log_handler.setFormatter(log_formatter)
+    logger.addHandler(log_handler)
+
+    logger.info(f"Starting AntiFold scan on {sample_name} with format: {format_type}")
+    logger.info(f"Chains to mutate: {chains_to_mutate}")
+
+    pdb_file = os.path.join(PDB_INPUT_DIR, f"{sample_name}.pdb")
+    cif_file = os.path.join(ANTIFOLD_OUTPUT_DIR, f"{sample_name}.cif")
+
+    if not os.path.exists(pdb_file):
+        logger.error(f"PDB file not found: {pdb_file}")
+        sys.exit(1)
+
+    if not os.path.exists(cif_file):
+        cif_file = convert_to_cif(pdb_file, cif_file)
+    else:
+        logger.info(f"Using existing CIF: {cif_file}")
+
+    try:
+        run_antifold(cif_file, format_type)
+        parse_antifold_csv(sample_name, format_type)
+    except subprocess.CalledProcessError as e:
+        logger.error(f"AntiFold subprocess failed: {e}")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        sys.exit(1)
+
+    logger.info("AntiFold mutation scan complete.")
+    logger.removeHandler(log_handler)
+    log_handler.close()
 
 if __name__ == "__main__":
     main()
