@@ -9,19 +9,12 @@ import shutil
 
 try:
     from antiberty import AntiBERTyRunner
-except ImportError:
-    AntiBERTyRunner = None
-
-try:
     from abnumber import Chain
-    _NUMBERING_OK = True
-    print("DEBUG: abnumber found, will use KABAT numbering")
-except Exception:
-    Chain = None
-    _NUMBERING_OK = False
-    print("WARNING: abnumber not available, fallback to simple positions")
+except ImportError:
+    print("WARNING: AntiBERTy or abnumber not installed, some features may be unavailable.")
     
-
+#TODO debug lm_design - need to have both sequence and structural loss (code can see from esm github)
+    
 # =============================
 # CONFIGURATION
 # =============================
@@ -59,8 +52,10 @@ def score_paired(vh_seq, vl_seq, model, format_type, model_type, sample_name=Non
     else:
         fullseq = f"{vh_seq}|{vl_seq}"
 
+    # Create a full sequence with a mask for mutation
     seqs = {}
     for i in range(len(fullseq)):
+        # Skip the mask character if not in nanobody format or is a separator
         if format_type.lower() != "nanobody" and fullseq[i] == "|":
             continue
         newseq = fullseq[:i] + "*" + fullseq[i+1:]
@@ -74,15 +69,19 @@ def score_paired(vh_seq, vl_seq, model, format_type, model_type, sample_name=Non
     for (chain, pos), seq in seqs.items():
         idx = seq.index("*")
         call_params = model.tokenizer.__call__.__code__.co_varnames
+        # for ablang1-heavy (used in nanobody), we need to pass `w_extra_tkns=False` because this arg dont exist
         tokenized = model.tokenizer([seq], pad=True, w_extra_tkns=False, device="cpu") if "w_extra_tkns" in call_params else model.tokenizer([seq], pad=True, device="cpu")
+        # Turn off autograd to save memory (no gradients needed for inference)
         with torch.no_grad():
+            # Get logits for the sequence with the mutation mask
             logits = model.AbLang(tokenized)[0]
-
+        # Set logits for special tokens to a very low value to avoid them being selected
         special_tokens = getattr(model.tokenizer, "all_special_tokens", None)
         if special_tokens:
             logits[:, special_tokens] = -float("inf")
 
         try:
+            # Get the token ID for the wildtype amino acid at the mutation position
             wt_token = model.tokenizer.aa_to_token[fullseq[idx]]
         except KeyError:
             print(f"WARNING: wildtype token {fullseq[idx]} not found in tokenizer; skipping")
@@ -105,9 +104,9 @@ def score_paired(vh_seq, vl_seq, model, format_type, model_type, sample_name=Non
                 "pos": pos,
                 "wt": fullseq[idx],
                 "mt": aa,
-                "wt_log_likelihood": wt_ll,
-                "mut_log_likelihood": mut_ll,
-                "delta_log_likelihood": delta_ll,
+                "wt_log_likelihood_ablang2": wt_ll,
+                "mut_log_likelihood_ablang2": mut_ll,
+                "delta_log_likelihood_ablang2": delta_ll,
             })
 
     return pd.DataFrame.from_records(records)
@@ -122,11 +121,11 @@ def run_abodybuilder2(vh_seq, vl_seq, output_path):
     model = predictor.predict({'H': vh_seq, 'L': vl_seq} if vl_seq else {'H': vh_seq})
     model.save(output_path)
     print(f"Saved structure to {output_path}")
-    # Perform renumbering
+    # Perform sequential renumbering starting from 1
     renumber_pdb_sequential(output_path)
 
     # Call relax using conda environment
-    relaxed_script = os.path.abspath("pyrosetta_relax.py")
+    relaxed_script = os.path.abspath("worker_py/pyrosetta_relax.py")
     subprocess.run([
         "conda", "run", "-n", "pyrosetta", "python", relaxed_script, output_path
     ], check=True)
@@ -169,7 +168,6 @@ def renumber_pdb_sequential(pdb_path, output_path=None):
         f.writelines(new_lines)
     print(f"Renumbered PDB written to {output_path}")
 
-
 # =============================
 # ANTI-BERTY MUT SCAN
 # =============================
@@ -204,38 +202,95 @@ def mutation_scan_paired(antiberty, vh_seq, vl_seq=None, batch_size=16):
                 "pos": pos,
                 "wt": wt,
                 "mt": mt,
-                "pll_mutant": mut_plls[idx].item(),
-                "pll_wildtype": wt_pll_dict[chain],
-                "delta_pll": mut_plls[idx].item() - wt_pll_dict[chain]
+                "mt_log_likelihood_antiberty": mut_plls[idx].item(),
+                "wt_log_likelihood_antiberty": wt_pll_dict[chain],
+                "delta_log_likelihood_antiberty": mut_plls[idx].item() - wt_pll_dict[chain]
             })
 
     return pd.DataFrame(records)
+
+def ensure_pdb_exists(name, vh, vl, format_type):
+    """
+    Ensure that the PDB file exists for the given sample.
+    If not, generate it using ABodyBuilder2.
+    """
+    pdbfile = os.path.join(PDB_OUTPUT_DIR, f"{name}.pdb")
+    if not os.path.exists(pdbfile):
+        print(f"Generating PDB for {name} to {pdbfile}")
+        vl_clean = None if vl in ["", "NA", "na", None] else vl
+        run_abodybuilder2(vh, vl_clean if format_type == "VHVL" else None, pdbfile)
+    else:
+        renumber_pdb_sequential(pdbfile)
+        print(f"PDB file already exists for {name}, skipping ABodyBuilder, but renumbering.")
+    return pdbfile
+
+def run_worker_script(name, vh, vl, format_type, mutate_str, script_path, env, extra_args=None):
+    """
+    Run the worker script for the given sample.
+    """
+    args = [
+        "conda", "run", "-n", env, "python", script_path,
+        name, vh, vl if format_type == "VHVL" else "NA",
+        "--mutate", mutate_str, "--format", format_type
+    ]
+    if extra_args:
+        args.extend(extra_args)
+    print(f"Launching: {' '.join(args)}")
+    subprocess.run(args, check=True)
+    
+def handle_ablang(vh, vl, model, format_type, name, output):
+    df = score_paired(vh, vl, model, format_type, "ablang", sample_name=name)
+    df["sample"] = name
+    df.to_csv(output, sep="\t", mode="a", header=not os.path.exists(output), index=False)
+    print(f"Results for {name} written to {output}")
+    
+def handle_antiberta(vh, vl, format_type, name, output, runner):
+    seqs = [vh] if format_type == "Nanobody" else [vh, vl]
+    if format_type == "VHVL" and (not vl or vl == "NA"):
+        print(f"Skipping {name}: missing VL sequence")
+        return
+    device = runner.device
+    pll_scores = runner.pseudo_log_likelihood(seqs, batch_size=1)
+    mut_df = mutation_scan_paired(runner, vh, vl if vl else None, batch_size=16)
+    mut_df["sample"] = name
+    mut_df.to_csv(output, sep="\t", mode="a", header=not os.path.exists(output), index=False)
+    print(f"Results for {name} written to {output}")
+    
+def get_format_type(format_str, mode):
+    format_str = str(format_str).lower()
+    if mode == "auto":
+        if "nanobody" in format_str or "vhh" in format_str:
+            return "Nanobody"
+        elif "mab" in format_str:
+            return "VHVL"
+        else:
+            return None
+    elif mode == "vhh":
+        return "Nanobody"
+    elif mode == "mab":
+        return "VHVL"
+    else:
+        raise ValueError("Invalid MODE")
 
 # =============================
 # MAIN
 # =============================
 
 def main():
-    data = pd.read_csv(INPUT_CSV)
-
-    if MODE == "vhh":
-        data = data[data["Format"].str.lower().str.contains("nanobody|vhh", na=False)]
-        print(f"Filtered to {len(data)} entries in vhh mode.")
-    if data.empty:
-        print("No samples to process.")
-        return
-
     for MODEL_TYPE in MODEL_TYPES:
         print(f"\n=== Running MODEL_TYPE: {MODEL_TYPE} ===")
         OUTPUT = f"/home/eva/0_point_mutation/results/{MODEL_TYPE}/{MODE}_{MODEL_TYPE}.csv"
         os.makedirs(os.path.dirname(OUTPUT), exist_ok=True)
         
         ablang_model = None
+        antiberty = None
+        
         if MODEL_TYPE == "ablang":
             ablang_model = load_model(MODE, MODEL_TYPE)
             # Compatibility patch
             tokenizer = ablang_model.tokenizer
             print(f"Tokenizer keys: {dir(ablang_model.tokenizer)}")
+            # ablang1-heavy and ablang2 have different tokenizer attributes
             if not hasattr(tokenizer, "aa_to_token"):
                 if hasattr(tokenizer, "vocab_to_token"):
                     tokenizer.aa_to_token = tokenizer.vocab_to_token
@@ -246,164 +301,54 @@ def main():
                     tokenizer.vocab_to_token = tokenizer.aa_to_token
                 else:
                     raise AttributeError("Tokenizer lacks both 'aa_to_token' and 'vocab_to_token'")
-
-
-        if MODEL_TYPE == "antiberta":
-            if AntiBERTyRunner is None:
-                print("ERROR: AntiBERTy not installed.")
-                return
+                
+        elif MODEL_TYPE == "antiberta":
             antiberty = AntiBERTyRunner()
             antiberty.model = antiberty.model.to("cpu")
             antiberty.device = "cpu"
             print(f"Loaded AntiBERTy on {antiberty.device}")
-
-        for sample_idx, (_, row) in enumerate(data.iterrows(), start=1):
+            
+        for sample_idx, (_, row) in enumerate(pd.read_csv(INPUT_CSV).iterrows(), start=1):
             name = row["name"]
             vh = row["vh"].upper()
             vl = row["vl"].upper() if "vl" in row and pd.notna(row["vl"]) else ""
             format_str = str(row["Format"]).lower()
 
-            if MODE == "auto":
-                if "nanobody" in format_str or "vhh" in format_str:
-                    format_type = "Nanobody"
-                elif "mab" in format_str:
-                    format_type = "VHVL"
-                else:
-                    continue
-            elif MODE == "vhh":
-                format_type = "Nanobody"
-            elif MODE == "mab":
-                format_type = "VHVL"
-            else:
-                raise ValueError("Invalid MODE")
+            format_type = get_format_type(format_str, MODE)
+            if not format_type:
+                continue
 
             print(f"[{sample_idx}/{len(data)}] Processing {name} ({format_type})...")
 
             try:
                 if MODEL_TYPE == "antiberta":
-                    seqs = [vh] if format_type == "Nanobody" else [vh, vl]
-                    if format_type == "VHVL" and (not vl or vl == "NA"):
-                        print(f"Skipping {name}: missing VL sequence")
-                        continue
-                    device = antiberty.device
-                    pll_scores = antiberty.pseudo_log_likelihood(seqs, batch_size=1)
-                    mut_df = mutation_scan_paired(antiberty, vh, vl if vl else None, batch_size=16)
-                    mut_df = mut_df.rename(columns={
-                        "pll_mutant": f"mut_log_likelihood_{MODEL_TYPE}",
-                        "pll_wildtype": f"wt_log_likelihood_{MODEL_TYPE}",
-                        "delta_pll": f"delta_log_likelihood_{MODEL_TYPE}"
-                    })
-                    mut_df["sample"] = name
-                    mut_df.to_csv(OUTPUT, sep="\t", mode="a", header=not os.path.exists(OUTPUT), index=False)
-                    print(f"Results for {name} written to {OUTPUT}")
-
-                elif MODEL_TYPE in ["esm1v", "nanobert", "lm_design", "tempro"]:
-                    pdbfile = os.path.join(PDB_OUTPUT_DIR, f"{name}.pdb")
-                    if MODEL_TYPE in ["antifold", "lm_design", "esm1f"]:
-                        if not os.path.exists(pdbfile):
-                            print(f"Generating PDB for {name} → {pdbfile}")
-                            vl_clean = None if vl in ["", "NA", "na", None] else vl
-                            run_abodybuilder2(vh, vl_clean if format_type == "VHVL" else None, pdbfile)
-                        else:
-                            print(f"PDB file already exists for {name}, skipping ABodyBuilder.")
-
-                    script_map = {
-                        "nanobert": ("nanobert_worker.py", "antiberty"),
-                        "esm1v": ("esm1v_worker.py", "esm"),
-                        "lm_design": ("lm_design_worker.py", "lm_design"),
-                        "tempro": ("thermo_worker.py", "esm")
-                    }
-                    worker_script, env = script_map[MODEL_TYPE]
-                    worker_args = [
-                        "conda", "run", "-n", env, "python", worker_script,
-                        name, vh, vl if format_type == "VHVL" else "NA", format_type
-                    ]
-
-                    print(f"Launching: {' '.join(worker_args)}")
-                    subprocess.run(worker_args, check=True)
-                    
-                elif MODEL_TYPE in ["antifold"]:
-                    pdbfile = os.path.join(PDB_OUTPUT_DIR, f"{name}.pdb")
-                    if not os.path.exists(pdbfile):
-                        print(f"Generating PDB for {name} → {pdbfile}")
-                        vl_clean = None if vl in ["", "NA", "na", None] else vl
-                        run_abodybuilder2(vh, vl_clean if format_type == "VHVL" else None, pdbfile)
-                    else:
-                        renumber_pdb_sequential(pdbfile)
-                        print(f"PDB file already exists for {name}, skipping ABodyBuilder, but renumbering.")
-
-                    script_map = {
-                        "antifold": ("antifold_worker.py", "antifold"),
-                    }
-                    worker_script, env = script_map[MODEL_TYPE]
-
-                    vl_clean = "NA"
-                    if format_type == "VHVL":
-                        vl_clean = vl if vl not in ["", "NA", "na", None] else "NA"
-
-                    mutate_str = "H" if format_type == "Nanobody" else "H,L"
-
-                    worker_args = [
-                        "conda", "run", "-n", env, "python", worker_script,
-                        name, vh, vl_clean,
-                        "--mutate", mutate_str, "--format", format_type
-                    ]
-
-                    print(f"Launching: {' '.join(worker_args)}")
-                    subprocess.run(worker_args, check=True)
-
-
-                elif MODEL_TYPE in ["esm1f", "pyrosetta"]:
-                    pdbfile = os.path.join(PDB_OUTPUT_DIR, f"{name}.pdb")
-                    if not os.path.exists(pdbfile):
-                        print(f"Generating PDB for {name} → {pdbfile}")
-                        vl_clean = None if vl in ["", "NA", "na", None] else vl
-                        run_abodybuilder2(vh, vl_clean if format_type == "VHVL" else None, pdbfile)
-                    else:
-                        renumber_pdb_sequential(pdbfile)
-                        print(f"PDB file already exists for {name}, skipping ABodyBuilder, but renumbering.")
-
-                    script_map = {
-                        "esm1f": ("esm1f_worker.py", "esm1f"),
-                        "pyrosetta": ("pyrosetta_worker.py", "pyrosetta")
-                    }
-                    worker_script, env = script_map[MODEL_TYPE]
-                    vl_clean = "NA"
-                    if format_type == "VHVL":
-                        vl_clean = vl if vl not in ["", "NA", "na", None] else "NA"
-
-                    mutate_str = "H" if format_type == "Nanobody" else "H,L"
-                    
-                    #-u tells Python to use unbuffered stdout and stderr.
-                    worker_args = [
-                        "conda", "run", "-n", env, "python", worker_script,
-                        name, vh, vl_clean,
-                        "--mutate", mutate_str,
-                        "--order", ORDER,
-                        "--nogpu"
-                    ]
-
-                    print(f"Launching: {' '.join(worker_args)}")
-                    subprocess.run(worker_args, check=True)
-
+                    handle_antiberta(vh, vl, format_type, name, OUTPUT, antiberty)
                 elif MODEL_TYPE == "ablang":
-                    df = score_paired(vh, vl, ablang_model, format_type, MODEL_TYPE, sample_name=name)
-                    df = df.rename(columns={
-                        "delta_log_likelihood": f"delta_log_likelihood_{MODEL_TYPE}",
-                        "mut_log_likelihood": f"mut_log_likelihood_{MODEL_TYPE}",
-                        "wt_log_likelihood": f"wt_log_likelihood_{MODEL_TYPE}"
-                    })
-                    df["sample"] = name
-                    df = df[[
-                        "chain", "pos", "wt", "mt",
-                        f"mut_log_likelihood_{MODEL_TYPE}",
-                        f"wt_log_likelihood_{MODEL_TYPE}",
-                        f"delta_log_likelihood_{MODEL_TYPE}",
-                        "sample"
-                    ]]
-                    df.to_csv(OUTPUT, sep="\t", mode="a", header=not os.path.exists(OUTPUT), index=False)
-                    print(f"Results for {name} written to {OUTPUT}")
-
+                    handle_ablang(vh, vl, ablang_model, format_type, name, OUTPUT)
+                elif MODEL_TYPE in ["esm1v", "nanobert", "lm_design", "tempro"]:
+                    ensure_pdb_exists(name, vh, vl, format_type)
+                    script_map = {
+                        "nanobert": ("worker_py/nanobert_worker.py", "antiberty"),
+                        "esm1v": ("worker_py/esm1v_worker.py", "esm"),
+                        "lm_design": ("worker_py/lm_design_worker.py", "lm_design"),
+                        "tempro": ("worker_py/thermo_worker.py", "esm")
+                    }
+                    script_path, env = script_map[MODEL_TYPE]
+                    run_worker_script(name, vh, vl, format_type, "H" if format_type == "Nanobody" else "H,L", script_path, env)
+                    
+                elif MODEL_TYPE in ["antifold", "esm1f", "pyrosetta"]:
+                    pdbfile = ensure_pdb_exists(name, vh, vl, format_type)
+                    script_map = {
+                        "antifold": ("worker_py/antifold_worker.py", "antifold"),
+                        "esm1f": ("worker_py/esm1f_worker.py", "esm1f"),
+                        "pyrosetta": ("worker_py/pyrosetta_worker.py", "pyrosetta")
+                    }
+                    script_path, env = script_map[MODEL_TYPE]
+                    vl_clean = vl if format_type == "VHVL" and vl not in ["", "NA", "na", None] else "NA"
+                    mutate_str = "H" if format_type == "Nanobody" else "H,L
+                    extra_args = ["--order", ORDER, "--nogpu"] if MODEL_TYPE in ["esm1f", "pyrosetta"] else []
+                    run_worker_script(name, vh, vl_clean, format_type, mutate_str, script_path, env, extra_args)
+            
             except subprocess.CalledProcessError as e:
                 print(f"Worker script failed for {name}: {e}")
                 continue
@@ -414,13 +359,7 @@ def main():
                 # Clear memory and cache
                 print("Cleaning up after model run...")
                 gc.collect()
-                torch.cuda.empty_cache()  # If running on GPU, but here you're using CPU
-
-                # Optional: Clear terminal screen (for visual clarity)
-                # if shutil.which("clear"):
-                #     os.system("clear")  # Unix/Linux
-                # elif shutil.which("cls"):
-                #    os.system("cls")    # Windows
+                torch.cuda.empty_cache()
 
 if __name__ == "__main__":
     main()

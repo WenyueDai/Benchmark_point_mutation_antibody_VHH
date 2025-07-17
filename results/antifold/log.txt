@@ -1,6 +1,0 @@
-[2025-07-16 23:38:12,400] Running inverse folding on PDB/CIFs ...
-[2025-07-16 23:38:15,007] Loaded model to cuda.
-[2025-07-16 23:38:15,008] Reading in (1) PDBs from DataFrame
-[2025-07-16 23:38:15,114] Predicting batch 1/1: PDBs 1-1 out of 1 total
-[2025-07-16 23:38:15,996] Saving 1 CSVs to /home/eva/0_point_mutation/results/antifold
-[2025-07-16 23:38:15,999] Writing 1MLC_abodybuilder2_after_relax_HL per-residue log probs CSV to /home/eva/0_point_mutation/results/antifold/1MLC_abodybuilder2_after_relax_HL.csv
