@@ -25,11 +25,11 @@ except Exception:
 # =============================
 # CONFIGURATION
 # =============================
-MODE = "vhh"   # auto (for all), vhh, mab
-ORDER = "H,M"  # chain order for protein complex to consider for log likelihood calculation, 
-MODEL_TYPES = ['antifold']  # ablang, esm1v, esm1f, antiberta, antifold, nanobert, pyrosetta, lm_design (weird, dont use), tempro
+MODE = "mab"   # auto (for all), vhh, mab
+ORDER = "H,L"  # chain order for protein complex to consider for log likelihood calculation, 
+MODEL_TYPES = ['ablang', 'esm1v', 'esm1f', 'antifold', 'pyrosetta']  # ablang, esm1v, esm1f, antiberta, antifold, nanobert, pyrosetta, lm_design (weird, dont use), tempro
 
-INPUT_CSV = "/home/eva/0_point_mutation/results/C_only.csv"
+INPUT_CSV = "/home/eva/0_point_mutation/playground_mAb_DMS/1MLC.csv"
 PDB_OUTPUT_DIR = "/home/eva/0_point_mutation/pdbs"
 ANTIFOLD_OUTPUT_DIR = "/home/eva/0_point_mutation/results/antifold"
 
@@ -297,9 +297,9 @@ def main():
                     mut_df.to_csv(OUTPUT, sep="\t", mode="a", header=not os.path.exists(OUTPUT), index=False)
                     print(f"Results for {name} written to {OUTPUT}")
 
-                elif MODEL_TYPE in ["esm1v", "nanobert", "pyrosetta", "lm_design", "tempro"]:
+                elif MODEL_TYPE in ["esm1v", "nanobert", "lm_design", "tempro"]:
                     pdbfile = os.path.join(PDB_OUTPUT_DIR, f"{name}.pdb")
-                    if MODEL_TYPE in ["antifold", "pyrosetta", "lm_design", "esm1f"]:
+                    if MODEL_TYPE in ["antifold", "lm_design", "esm1f"]:
                         if not os.path.exists(pdbfile):
                             print(f"Generating PDB for {name} → {pdbfile}")
                             vl_clean = None if vl in ["", "NA", "na", None] else vl
@@ -308,7 +308,6 @@ def main():
                             print(f"PDB file already exists for {name}, skipping ABodyBuilder.")
 
                     script_map = {
-                        "pyrosetta": ("pyrosetta_worker.py", "pyrosetta"),
                         "nanobert": ("nanobert_worker.py", "antiberty"),
                         "esm1v": ("esm1v_worker.py", "esm"),
                         "lm_design": ("lm_design_worker.py", "lm_design"),
@@ -354,7 +353,7 @@ def main():
                     subprocess.run(worker_args, check=True)
 
 
-                elif MODEL_TYPE in ["esm1f"]:
+                elif MODEL_TYPE in ["esm1f", "pyrosetta"]:
                     pdbfile = os.path.join(PDB_OUTPUT_DIR, f"{name}.pdb")
                     if not os.path.exists(pdbfile):
                         print(f"Generating PDB for {name} → {pdbfile}")
@@ -366,6 +365,7 @@ def main():
 
                     script_map = {
                         "esm1f": ("esm1f_worker.py", "esm1f"),
+                        "pyrosetta": ("pyrosetta_worker.py", "pyrosetta")
                     }
                     worker_script, env = script_map[MODEL_TYPE]
                     vl_clean = "NA"
@@ -376,7 +376,7 @@ def main():
                     
                     #-u tells Python to use unbuffered stdout and stderr.
                     worker_args = [
-                        "conda", "run", "-n", "esm1f", "python", "esm1f_worker.py",
+                        "conda", "run", "-n", env, "python", worker_script,
                         name, vh, vl_clean,
                         "--mutate", mutate_str,
                         "--order", ORDER,

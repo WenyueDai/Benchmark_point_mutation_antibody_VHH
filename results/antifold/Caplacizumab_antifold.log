@@ -1,8 +1,0 @@
-2025-07-15 21:08:16,758 [INFO] Starting AntiFold scan on Caplacizumab with format: Nanobody
-2025-07-15 21:08:16,758 [INFO] Chains to mutate: ['H']
-2025-07-15 21:08:16,758 [INFO] Using existing CIF: /home/eva/0_point_mutation/results/antifold/Caplacizumab.cif
-2025-07-15 21:08:16,766 [INFO] Detected chains in structure: ['A', 'B']
-2025-07-15 21:08:16,766 [INFO] Running AntiFold on nanobody chain: A
-2025-07-15 21:08:16,766 [INFO] Executing AntiFold: python -m antifold.main --pdb_file /home/eva/0_point_mutation/results/antifold/Caplacizumab.cif --nanobody_chain A --out_dir /home/eva/0_point_mutation/results/antifold
-2025-07-15 21:08:24,869 [INFO] AntiFold run complete.
-2025-07-15 21:08:24,905 [INFO] AntiFold mutation scan complete.
