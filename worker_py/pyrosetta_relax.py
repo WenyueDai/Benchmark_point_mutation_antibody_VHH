@@ -23,7 +23,7 @@ def relax_pdb(pdb_path, n_repeats=5):
 
     print(f"Starting score: {scorefxn(pose):.3f}")
 
-    # MoveMap: relax side chains only
+    # MoveMap: relax on both side chain and backbone
     movemap = MoveMap()
     movemap.set_bb(True)
     movemap.set_chi(True)

@@ -36,6 +36,7 @@ python pyrosetta_worker.py MyAb EVQLVESGGGLVQPGGSLRLSCAASGRTFSYNLPSEYTFWGQGTQVTV
 init(extra_options='-mute all')
 
 AMINO_ACIDS = "ACDEFGHIKLMNPQRSTVWY"
+PYROSETTA_OUTPUT_DIR = "results/pyrosetta"
 
 logger = logging.getLogger("pyrosetta_ddg")
 logger.setLevel(logging.INFO)
@@ -47,14 +48,6 @@ def setup_logger(sample_name):
     log_handler.setFormatter(log_formatter)
     logger.addHandler(log_handler)
     return log_handler
-
-def relax_pose(pose):
-    scorefxn = get_fa_scorefxn()
-    relax = FastRelax()
-    relax.set_scorefxn(scorefxn)
-    relax.constrain_relax_to_start_coords(True)
-    relax.apply(pose)
-    return pose
 
 def pack_mutate(pose, posi, mutant_aa):
     scorefxn = get_fa_scorefxn()
@@ -92,7 +85,6 @@ def get_chain_id(pose, residue_index):
 
 def compute_ddg_all(pdb_path, chains_to_mutate, sample_name):
     pose = pose_from_pdb(pdb_path)
-    pose = relax_pose(pose)
     scorefxn = get_fa_scorefxn()
 
     wt_score = scorefxn(pose)
@@ -120,12 +112,9 @@ def compute_ddg_all(pdb_path, chains_to_mutate, sample_name):
                     "pos": i,
                     "wt": wt,
                     "mt": mt,
-                    "delta_ll_complex": -ddg,
-                    "delta_ll_target": -ddg,  # placeholder
-                    "mut_ll_complex": mut_score,
-                    "mut_ll_target": mut_score,
-                    "wt_ll_complex": wt_score,
-                    "wt_ll_target": wt_score
+                    "delta_dG_complex_pyrosetta": -ddg,
+                    "mut_dG_complex_pyrosetta": mut_score,
+                    "wt_dG_complex_pyrosetta": wt_score,
                 })
             except Exception as e:
                 logger.warning(f"Skipped {wt}{i}{mt} on chain {chain}: {e}")
@@ -141,6 +130,7 @@ def main():
     parser.add_argument("--mutate", required=True, help="Comma-separated list of chains to mutate")
     parser.add_argument("--order", default=None, help="Optional chain order (unused here)")
     parser.add_argument("--nogpu", action="store_true", help="(Unused) For compatibility with ESM script")
+    parser.add_argument("--format", type=str, help="Format type (unused here, for compatibility)")
     args = parser.parse_args()
 
     sample_name = args.sample_name
@@ -154,7 +144,7 @@ def main():
 
     logger.info(f"Starting mutation scan for '{sample_name}' on chains {chains_to_mutate}")
     df = compute_ddg_all(pdb_path, chains_to_mutate, sample_name)
-    out_path = f"{sample_name}_pyrosetta_tidy.csv"
+    out_path = os.path.join(PYROSETTA_OUTPUT_DIR, f"{sample_name}_pyrosetta_tidy.csv")
     df.to_csv(out_path, index=False)
     logger.info(f"Saved results to: {out_path}")
 

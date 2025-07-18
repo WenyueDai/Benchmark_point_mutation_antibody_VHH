@@ -1,0 +1,8 @@
+2025-07-17 22:07:11,211 [INFO] Starting AntiFold scan on 1MLC_pdb_before_relax with format: VHVL
+2025-07-17 22:07:11,211 [INFO] Chains to mutate: ['H', 'L']
+2025-07-17 22:07:11,242 [INFO] Converted /home/eva/0_point_mutation/pdbs/1MLC_pdb_before_relax.pdb to /home/eva/0_point_mutation/results/antifold/1MLC_pdb_before_relax.cif
+2025-07-17 22:07:11,268 [INFO] Detected chains in structure: ['H', 'L']
+2025-07-17 22:07:11,268 [INFO] Running AntiFold on VH/VL chains: H=H, L=L
+2025-07-17 22:07:11,268 [INFO] Executing AntiFold: python -m antifold.main --pdb_file /home/eva/0_point_mutation/results/antifold/1MLC_pdb_before_relax.cif --heavy_chain H --light_chain L --out_dir /home/eva/0_point_mutation/results/antifold
+2025-07-17 22:07:35,398 [INFO] AntiFold run complete.
+2025-07-17 22:07:35,566 [INFO] AntiFold mutation scan complete.

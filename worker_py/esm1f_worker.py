@@ -38,6 +38,7 @@ log_formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
 log_handler = None  # Assigned per sample in main()
 
 AAs = list("ACDEFGHIKLMNPQRSTVWY")
+ESM1F_OUTPUT_DIR = "results/esm1f"
 
 def main():
     parser = argparse.ArgumentParser(
@@ -49,6 +50,7 @@ def main():
     parser.add_argument('--mutate', required=True, help='Comma-separated list of chains to mutate (e.g., H or H,L)')
     parser.add_argument('--order', default=None, help='Chain order override (e.g., H,M or H,L,M)')
     parser.add_argument('--nogpu', action='store_true', help='Disable GPU even if available')
+    parser.add_argument('--format', type=str, help='Not used, for compatibility with other scripts')
     args = parser.parse_args()
 
     sample_name = args.sample_name
@@ -182,11 +184,11 @@ def main():
     # Save results
     df = pd.DataFrame(records, columns=[
         "sample", "chain", "pos", "wt", "mt",
-        "delta_ll_complex", "delta_ll_target",
-        "mut_ll_complex", "mut_ll_target",
-        "wt_ll_complex", "wt_ll_target"
+        "delta_log_likelihood_complex_esm1f", "delta_log_likelihood_target_esm1f",
+        "mt_log_likelihood_complex_esm1f", "mt_log_likelihood_target_esm1f",
+        "wt_log_likelihood_complex_esm1f", "wt_log_likelihood_target_esm1f"
     ])
-    out_path = f"{sample_name}_esm1f_complex_tidy.csv"
+    out_path = os.path.join(ESM1F_OUTPUT_DIR, f"{sample_name}_esm1f_complex_tidy.csv")
     df.to_csv(out_path, index=False)
     logger.info(f"Results saved to {out_path}")
 

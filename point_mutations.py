@@ -20,9 +20,9 @@ except ImportError:
 # =============================
 MODE = "mab"   # auto (for all), vhh, mab
 ORDER = "H,L"  # chain order for protein complex to consider for log likelihood calculation, 
-MODEL_TYPES = ['ablang', 'esm1v', 'esm1f', 'antifold', 'pyrosetta']  # ablang, esm1v, esm1f, antiberta, antifold, nanobert, pyrosetta, lm_design (weird, dont use), tempro
+MODEL_TYPES = ['esm1f']  # ablang, esm1v, esm1f, antiberta, antifold, nanobert, pyrosetta, lm_design (weird, dont use), tempro
 
-INPUT_CSV = "/home/eva/0_point_mutation/playground_mAb_DMS/1MLC.csv"
+INPUT_CSV = "/home/eva/0_point_mutation/benchmark_results/playground_mAb_DMS/1MLC.csv"
 PDB_OUTPUT_DIR = "/home/eva/0_point_mutation/pdbs"
 ANTIFOLD_OUTPUT_DIR = "/home/eva/0_point_mutation/results/antifold"
 
@@ -231,7 +231,7 @@ def run_worker_script(name, vh, vl, format_type, mutate_str, script_path, env, e
     args = [
         "conda", "run", "-n", env, "python", script_path,
         name, vh, vl if format_type == "VHVL" else "NA",
-        "--mutate", mutate_str, "--format", format_type
+        "--format", format_type
     ]
     if extra_args:
         args.extend(extra_args)
@@ -318,19 +318,15 @@ def main():
             if not format_type:
                 continue
 
-            print(f"[{sample_idx}/{len(data)}] Processing {name} ({format_type})...")
-
             try:
                 if MODEL_TYPE == "antiberta":
                     handle_antiberta(vh, vl, format_type, name, OUTPUT, antiberty)
                 elif MODEL_TYPE == "ablang":
                     handle_ablang(vh, vl, ablang_model, format_type, name, OUTPUT)
-                elif MODEL_TYPE in ["esm1v", "nanobert", "lm_design", "tempro"]:
-                    ensure_pdb_exists(name, vh, vl, format_type)
+                elif MODEL_TYPE in ["esm1v", "nanobert", "tempro"]:
                     script_map = {
                         "nanobert": ("worker_py/nanobert_worker.py", "antiberty"),
                         "esm1v": ("worker_py/esm1v_worker.py", "esm"),
-                        "lm_design": ("worker_py/lm_design_worker.py", "lm_design"),
                         "tempro": ("worker_py/thermo_worker.py", "esm")
                     }
                     script_path, env = script_map[MODEL_TYPE]
@@ -345,8 +341,8 @@ def main():
                     }
                     script_path, env = script_map[MODEL_TYPE]
                     vl_clean = vl if format_type == "VHVL" and vl not in ["", "NA", "na", None] else "NA"
-                    mutate_str = "H" if format_type == "Nanobody" else "H,L
-                    extra_args = ["--order", ORDER, "--nogpu"] if MODEL_TYPE in ["esm1f", "pyrosetta"] else []
+                    mutate_str = "H" if format_type == "Nanobody" else "H,L"
+                    extra_args = ["--mutate", mutate_str,"--order", ORDER, "--nogpu"] if MODEL_TYPE in ["esm1f", "pyrosetta"] else []
                     run_worker_script(name, vh, vl_clean, format_type, mutate_str, script_path, env, extra_args)
             
             except subprocess.CalledProcessError as e:
