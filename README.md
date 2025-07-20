@@ -59,20 +59,22 @@ This benchmark evaluates the ability of various computational models to predict 
 1. Correlation with Experimental DMS Scores
 | Model         | Correlation (Estimate) | Observations                        |
 | ------------- | ---------------------- | ----------------------------------- |
-| **ESM-1f**    | \~0.5–0.6              | Strongest alignment with experiment |
-| **Antifold**  | \~0.4–0.5              | Moderate alignment                  |
-| **Ablang2**   | \~0.3–0.4              | Limited alignment                   |
+| **ESM-1f**    | ~0.5-0.6               | Strongest alignment with experiment |
+| **Antifold**  | ~0.4-0.5               | Moderate alignment                  |
+| **Ablang2**   | ~0.3-0.4               | Limited alignment                   |
 | **PyRosetta** | < 0.2                  | Poor correlation with DMS data      |
+
 Structural relaxation (before vs. after FastRelax) had minimal effect on correlation across all models.
 
 2. Detection of Beneficial Mutations (Still need to do)
 DMS identified 34 Fv positions with enhanced binding upon mutation. Most models predicted only a small fraction of these beneficial mutations:
 | Model         | Predicted Beneficial Mutations | Recall Estimate (out of 34) |
 | ------------- | ------------------------------ | --------------------------- |
-| **ESM-1f**    | XXX                           | \~XXX%                    |
-| **Antifold**  | XXX                           | \~XXX%                    |
-| **Ablang2**   | XXX                             | \~XXX%                        |
-| **PyRosetta** | XXX                            | \~XXX%                        |
+| **ESM-1f**    | XXX                            | ~XXX%                        |
+| **Antifold**  | XXX                            | ~XXX%                        |
+| **Ablang2**   | XXX                            | ~XXX%                        |
+| **PyRosetta** | XXX                            | ~XXX%                        |
+
 
 3. Conclusions
 - ESM-1f and Antifold show the highest consistency with DMS data for predicting affinity-enhancing mutations.
