@@ -57,6 +57,7 @@ This benchmark evaluates the ability of various computational models to predict 
 
 ***Summaries***
 1. Correlation with Experimental DMS Scores
+
 | Model         | Correlation (Estimate) | Observations                        |
 | ------------- | ---------------------- | ----------------------------------- |
 | **ESM-1f**    | ~0.5-0.6               | Strongest alignment with experiment |
@@ -68,6 +69,7 @@ Structural relaxation (before vs. after FastRelax) had minimal effect on correla
 
 2. Detection of Beneficial Mutations (Still need to do)
 DMS identified 34 Fv positions with enhanced binding upon mutation. Most models predicted only a small fraction of these beneficial mutations:
+
 | Model         | Predicted Beneficial Mutations | Recall Estimate (out of 34) |
 | ------------- | ------------------------------ | --------------------------- |
 | **ESM-1f**    | XXX                            | ~XXX%                        |
