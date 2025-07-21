@@ -16,21 +16,6 @@ from pyrosetta.rosetta.core.pack.task.operation import (
     OperateOnResidueSubset, RestrictAbsentCanonicalAASRLT
 )
 from pyrosetta.rosetta.protocols.minimization_packing import PackRotamersMover
-from pyrosetta.rosetta.protocols.relax import FastRelax
-
-"""
-Format: VHH — Input structure contains only the VHH (H chain). Mutate H, score H alone.
-python pyrosetta_worker.py MyVHH EVQLVESGGGLVRVRTLPSEYTFWGQGTQVTVSS NA --mutate H --order H
-
-Format: VHH + antigen — Input structure contains VHH (H) and antigen (e.g., A). Mutate H only, score the full complex (H + antigen).
-python pyrosetta_worker.py VHH_complex EVQLVESGGGLVQPGGSLRLSCAASGRTFVRTLPSEYTFWGQGTQVTVSS NA --mutate H --order H,A
-
-Format: VH/VL — Input structure contains VH (H) and VL (L). Mutate both H and L, score the VH–VL complex.
-python pyrosetta_worker.py MyAb EVQLVESGGGLVQPGGSLRLSCAASGRTFSYNLPSEYTFWGQGTQVTVSS EIVLTQSPATLSLSPGERAQAPRLLIYQPQQYNSYPWTFGQGTKLEIK --mutate H,L --order H,L
-
-Format: VH/VL + antigen — Input structure contains VH (H), VL (L), and antigen (e.g., A). Mutate H and L, score the full complex (H + L + antigen).
-python pyrosetta_worker.py MyAb EVQLVESGGGLVQPGGSLRLSCAASGRTFSYNLPSEYTFWGQGTQVTVSS EIVLTQSPATLSLSPGERAQAPRLLIYQPQQYNSYPWTFGQGTKLEIK --mutate H,L --order H,L,A
-"""
 
 # Initialize PyRosetta
 init(extra_options='-mute all')
@@ -43,7 +28,8 @@ logger.setLevel(logging.INFO)
 log_formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
 
 def setup_logger(sample_name):
-    log_file = f"{sample_name}_pyrosetta.log"
+    os.makedirs(PYROSETTA_OUTPUT_DIR, exist_ok=True)
+    log_file = os.path.join(PYROSETTA_OUTPUT_DIR, f"{sample_name}_pyrosetta.log")
     log_handler = logging.FileHandler(log_file, mode='w')
     log_handler.setFormatter(log_formatter)
     logger.addHandler(log_handler)
@@ -86,7 +72,6 @@ def get_chain_id(pose, residue_index):
 def compute_ddg_all(pdb_path, chains_to_mutate, sample_name):
     pose = pose_from_pdb(pdb_path)
     scorefxn = get_fa_scorefxn()
-
     wt_score = scorefxn(pose)
     logger.info(f"WT total score: {wt_score:.3f}")
 
@@ -122,15 +107,26 @@ def compute_ddg_all(pdb_path, chains_to_mutate, sample_name):
 
     return pd.DataFrame(results)
 
+def compute_wt_score_only(pdb_path, sample_name):
+    pose = pose_from_pdb(pdb_path)
+    scorefxn = get_fa_scorefxn()
+    wt_score = scorefxn(pose)
+    logger.info(f"[log_likelihood_only] WT score for {sample_name}: {wt_score:.3f}")
+    return pd.DataFrame([{
+        "sample": sample_name,
+        "wt_dG_complex_pyrosetta": wt_score
+    }])
+
 def main():
     parser = argparse.ArgumentParser(description="PyRosetta mutation scan")
-    parser.add_argument("sample_name", type=str, help="Sample name (PDB without extension)")
-    parser.add_argument("vh_seq", type=str, help="VH sequence (not used, for compatibility)")
-    parser.add_argument("vl_seq", type=str, help="VL sequence (not used, for compatibility)")
-    parser.add_argument("--mutate", required=True, help="Comma-separated list of chains to mutate")
-    parser.add_argument("--order", default=None, help="Optional chain order (unused here)")
-    parser.add_argument("--nogpu", action="store_true", help="(Unused) For compatibility with ESM script")
-    parser.add_argument("--format", type=str, help="Format type (unused here, for compatibility)")
+    parser.add_argument("sample_name", type=str)
+    parser.add_argument("vh_seq", type=str)
+    parser.add_argument("vl_seq", type=str)
+    parser.add_argument("--mutate", required=True)
+    parser.add_argument("--order", default=None)
+    parser.add_argument("--nogpu", action="store_true")
+    parser.add_argument("--format", type=str)
+    parser.add_argument("--log_likelihood_only", action="store_true", help="Skip mutation scan and compute WT score only")
     args = parser.parse_args()
 
     sample_name = args.sample_name
@@ -142,8 +138,14 @@ def main():
         logger.error(f"PDB file not found: {pdb_path}")
         sys.exit(1)
 
-    logger.info(f"Starting mutation scan for '{sample_name}' on chains {chains_to_mutate}")
-    df = compute_ddg_all(pdb_path, chains_to_mutate, sample_name)
+    logger.info(f"Running PyRosetta on '{sample_name}' with log_likelihood_only={args.log_likelihood_only}")
+
+    if args.log_likelihood_only:
+        df = compute_wt_score_only(pdb_path, sample_name)
+    else:
+        df = compute_ddg_all(pdb_path, chains_to_mutate, sample_name)
+
+    os.makedirs(PYROSETTA_OUTPUT_DIR, exist_ok=True)
     out_path = os.path.join(PYROSETTA_OUTPUT_DIR, f"{sample_name}_pyrosetta_tidy.csv")
     df.to_csv(out_path, index=False)
     logger.info(f"Saved results to: {out_path}")

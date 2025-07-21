@@ -71,8 +71,7 @@ def run_antifold(cif_file, format_type):
     subprocess.run(cmd, check=True)
     logger.info("AntiFold run complete.")
 
-def parse_antifold_csv(sample_name, format_type):
-    # tidy csv transform
+def parse_antifold_csv(sample_name, format_type, log_likelihood_only=False):
     try:
         available_csvs = [
             os.path.join(ANTIFOLD_OUTPUT_DIR, f)
@@ -84,49 +83,64 @@ def parse_antifold_csv(sample_name, format_type):
             print(f"ERROR: Could not find any AntiFold CSV output files for {sample_name}")
             sys.exit(1)
 
-        output_columns = [
-            "chain", "pos", "wt", "mt",
-            "mut_log_likelihood_antifold",
-            "wt_log_likelihood_antifold",
-            "delta_log_likelihood_antifold",
-            "sample"
-        ]
-
         for antifold_csv in available_csvs:
             print(f"Parsing AntiFold CSV to tidy format: {antifold_csv}")
             af = pd.read_csv(antifold_csv)
-            aas = list("ACDEFGHIKLMNPQRSTVWY")
 
-            records = []
-            for _, row in af.iterrows():
-                pos = row["pdb_pos"]
-                chain_label = row["pdb_chain"]
-                wt = row["pdb_res"]
-                if wt not in aas or wt not in af.columns:
-                    logger.warning(f"Skipping row at pos {pos} with unknown wt residue: {wt}")
-                    continue
-                wt_ll = row[wt]
-                for mt in aas:
-                    mut_ll = row[mt]
-                    delta = mut_ll - wt_ll
-                    records.append((
-                        chain_label, pos, wt, mt, mut_ll, wt_ll, delta, sample_name
-                    ))
+            if log_likelihood_only:
+                total_ll = 0.0
+                count = 0
 
-            tidy_df = pd.DataFrame(records, columns=output_columns)
+                for _, row in af.iterrows():
+                    wt = row["pdb_res"]
+                    if wt in AAs and wt in af.columns:
+                        total_ll += row[wt]
+                        count += 1
 
-            combined_tidy = os.path.join(ANTIFOLD_OUTPUT_DIR, f"{format_type}_antifold.csv")
-            if not os.path.exists(combined_tidy):
-                tidy_df.to_csv(combined_tidy, index=False, sep="\t", columns=output_columns)
-                print(f"Created new combined tidy CSV: {combined_tidy}")
+                df = pd.DataFrame([{
+                    "sample": sample_name,
+                    "log_likelihood_antifold": total_ll
+                }])
+
+                output_file = os.path.join(ANTIFOLD_OUTPUT_DIR, f"{format_type}_antifold_likelihood_only.csv")
+                write_header = not os.path.exists(output_file)
+                df.to_csv(output_file, mode="a", header=write_header, index=False)
+                print(f"WT-only log-likelihood written to: {output_file}")
+                return
+
             else:
-                tidy_df.to_csv(combined_tidy, mode="a", header=False, index=False, sep="\t", columns=output_columns)
-                print(f"Appended to combined tidy CSV: {combined_tidy}")
+                records = []
+                for _, row in af.iterrows():
+                    pos = row["pdb_pos"]
+                    chain_label = row["pdb_chain"]
+                    wt = row["pdb_res"]
+                    if wt not in AAs or wt not in af.columns:
+                        logger.warning(f"Skipping row at pos {pos} with unknown wt residue: {wt}")
+                        continue
+                    wt_ll = row[wt]
+                    for mt in AAs:
+                        mut_ll = row[mt]
+                        delta = mut_ll - wt_ll
+                        records.append((
+                            chain_label, pos, wt, mt, mut_ll, wt_ll, delta, sample_name
+                        ))
+
+                tidy_df = pd.DataFrame(records, columns=[
+                    "chain", "pos", "wt", "mt",
+                    "mut_log_likelihood_antifold",
+                    "wt_log_likelihood_antifold",
+                    "delta_log_likelihood_antifold",
+                    "sample"
+                ])
+
+                combined_tidy = os.path.join(ANTIFOLD_OUTPUT_DIR, f"{format_type}_antifold.csv")
+                write_header = not os.path.exists(combined_tidy)
+                tidy_df.to_csv(combined_tidy, mode="a", header=write_header, index=False, sep="\t")
+                print(f"{'Created' if write_header else 'Appended to'} combined tidy CSV: {combined_tidy}")
 
     except Exception as e:
         print(f"ERROR while transforming tidy CSV: {e}")
         sys.exit(1)
-
 
 
 def main():
@@ -136,6 +150,7 @@ def main():
     parser.add_argument("vl_seq", type=str, help="VL sequence or 'NA' (ignored)")
     parser.add_argument("--mutate", required=True, help="Comma-separated list of chains to mutate (e.g., H,L)")
     parser.add_argument("--format", required=True, choices=["Nanobody", "VHVL"], help="Input format type")
+    parser.add_argument('--log_likelihood_only', action='store_true', help='Only compute WT log-likelihood, skip mutation scan')
 
     args = parser.parse_args()
     sample_name = args.sample_name
@@ -166,7 +181,7 @@ def main():
 
     try:
         run_antifold(cif_file, format_type)
-        parse_antifold_csv(sample_name, format_type)
+        parse_antifold_csv(sample_name, format_type, log_likelihood_only=args.log_likelihood_only)
     except subprocess.CalledProcessError as e:
         logger.error(f"AntiFold subprocess failed: {e}")
         sys.exit(1)

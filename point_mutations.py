@@ -6,6 +6,8 @@ import torch
 import subprocess
 import gc
 import shutil
+import traceback
+
 
 try:
     from antiberty import AntiBERTyRunner
@@ -18,9 +20,10 @@ except ImportError:
 # =============================
 # CONFIGURATION
 # =============================
-MODE = "mab"   # auto (for all), vhh, mab
-ORDER = "H,L"  # chain order for protein complex to consider for log likelihood calculation, 
-MODEL_TYPES = ['esm1f']  # ablang, esm1v, esm1f, antiberta, antifold, nanobert, pyrosetta, lm_design (weird, dont use), tempro
+MODE = "vhh"   # auto (for all), vhh, mab
+ORDER = "H"  # chain order for protein complex to consider for log likelihood calculation, 
+MODEL_TYPES = ['ablang']  # ablang, esm1v, esm1f, antiberta, antifold, nanobert, pyrosetta, lm_design (weird, dont use), tempro
+LOG_LIKELIHOOD_ONLY = True  # Set to True to skip mutation scan and just compute log-likelihoods
 
 INPUT_CSV = "/home/eva/0_point_mutation/benchmark_results/playground_mAb_DMS/1MLC.csv"
 PDB_OUTPUT_DIR = "/home/eva/0_point_mutation/pdbs"
@@ -34,13 +37,16 @@ os.makedirs(ANTIFOLD_OUTPUT_DIR, exist_ok=True)
 # =============================
 
 def load_model(format_type, model_type):
-    if model_type == "ablang":
-        import ablang2
-        m = "ablang1-heavy" if format_type.lower() == "nanobody" else "ablang2-paired"
-        model = ablang2.pretrained(m, random_init=False, ncpu=1, device="cpu")
-        model.freeze()
-        return model
-    return None
+    import ablang2
+    if format_type in ["Nanobody", "nanobody", "vhh"]:
+        print("[INFO] Loading ablang1-heavy (for nanobody)")
+        model = ablang2.pretrained("ablang1-heavy", random_init=False, ncpu=1, device="cpu")
+    else:
+        print("[INFO] Loading ablang2-paired (for VH+VL)")
+        model = ablang2.pretrained("ablang2-paired", random_init=False, ncpu=1, device="cpu")
+    model.freeze()
+    return model
+
 
 # =============================
 # ABLANG SCORER
@@ -239,10 +245,55 @@ def run_worker_script(name, vh, vl, format_type, mutate_str, script_path, env, e
     subprocess.run(args, check=True)
     
 def handle_ablang(vh, vl, model, format_type, name, output):
-    df = score_paired(vh, vl, model, format_type, "ablang", sample_name=name)
-    df["sample"] = name
+    if LOG_LIKELIHOOD_ONLY:
+        # Detect model type from model name
+        model_name = getattr(model, "name_or_path", str(model))
+        print(f"[INFO] Using model: {model_name}")
+        is_paired_model = "ablang2-paired" in model_name.lower()
+
+        # Construct input sequence correctly
+        if is_paired_model:
+            input_seq = [(vh, vl)]
+            # For log likelihood, we can use only heavy+light combined
+            encode_input = (vh, vl)
+        else:
+            input_seq = [vh]
+            encode_input = vh
+
+        # Detect if w_extra_tkns is needed
+        call_params = model.tokenizer.__call__.__code__.co_varnames
+        if "w_extra_tkns" in call_params:
+            tokenized = model.tokenizer(input_seq, pad=True, w_extra_tkns=False, device="cpu")
+        else:
+            tokenized = model.tokenizer(input_seq, pad=True, device="cpu")
+
+        with torch.no_grad():
+            logits = model.AbLang(tokenized)[0]  # shape: (L, vocab_size)
+
+        # Convert sequence to tokens
+        token_ids = model.tokenizer.encode(encode_input, device="cpu")[0]
+
+        # Check shape to ensure it’s a 1D tensor
+        if token_ids.ndim == 0:
+            print(f"[ERROR] Tokenizer returned 0-D tensor for {name}: {token_ids}")
+            return  # or raise an error
+
+        log_probs = torch.log_softmax(logits, dim=-1)
+
+        ll_total = 0.0
+        for i in range(token_ids.shape[0]):
+            aa_index = token_ids[i].item()
+            ll_total += log_probs[i, aa_index].item()
+
+        df = pd.DataFrame([{'sample': name, 'log_likelihood_ablang2': ll_total}])
+
+    else:
+        df = score_paired(vh, vl, model, format_type, "ablang", sample_name=name)
+        df["sample"] = name
+
     df.to_csv(output, sep="\t", mode="a", header=not os.path.exists(output), index=False)
     print(f"Results for {name} written to {output}")
+
     
 def handle_antiberta(vh, vl, format_type, name, output, runner):
     seqs = [vh] if format_type == "Nanobody" else [vh, vl]
@@ -251,9 +302,15 @@ def handle_antiberta(vh, vl, format_type, name, output, runner):
         return
     device = runner.device
     pll_scores = runner.pseudo_log_likelihood(seqs, batch_size=1)
-    mut_df = mutation_scan_paired(runner, vh, vl if vl else None, batch_size=16)
-    mut_df["sample"] = name
-    mut_df.to_csv(output, sep="\t", mode="a", header=not os.path.exists(output), index=False)
+    if LOG_LIKELIHOOD_ONLY:
+        pll_dict = {'H': pll_scores[0].item()}
+        if len(pll_scores) > 1:
+            pll_dict['L'] = pll_scores[1].item()
+        df = pd.DataFrame([{"sample": name, **{f"log_likelihood_{k}_antiberty": v for k, v in pll_dict.items()}}])
+    else:
+        df = mutation_scan_paired(runner, vh, vl if vl else None, batch_size=16)
+        df["sample"] = name
+    df.to_csv(output, sep="\t", mode="a", header=not os.path.exists(output), index=False)
     print(f"Results for {name} written to {output}")
     
 def get_format_type(format_str, mode):
@@ -281,16 +338,13 @@ def main():
         print(f"\n=== Running MODEL_TYPE: {MODEL_TYPE} ===")
         OUTPUT = f"/home/eva/0_point_mutation/results/{MODEL_TYPE}/{MODE}_{MODEL_TYPE}.csv"
         os.makedirs(os.path.dirname(OUTPUT), exist_ok=True)
-        
+
         ablang_model = None
         antiberty = None
-        
+
         if MODEL_TYPE == "ablang":
             ablang_model = load_model(MODE, MODEL_TYPE)
-            # Compatibility patch
             tokenizer = ablang_model.tokenizer
-            print(f"Tokenizer keys: {dir(ablang_model.tokenizer)}")
-            # ablang1-heavy and ablang2 have different tokenizer attributes
             if not hasattr(tokenizer, "aa_to_token"):
                 if hasattr(tokenizer, "vocab_to_token"):
                     tokenizer.aa_to_token = tokenizer.vocab_to_token
@@ -301,24 +355,34 @@ def main():
                     tokenizer.vocab_to_token = tokenizer.aa_to_token
                 else:
                     raise AttributeError("Tokenizer lacks both 'aa_to_token' and 'vocab_to_token'")
-                
         elif MODEL_TYPE == "antiberta":
             antiberty = AntiBERTyRunner()
             antiberty.model = antiberty.model.to("cpu")
             antiberty.device = "cpu"
             print(f"Loaded AntiBERTy on {antiberty.device}")
-            
-        for sample_idx, (_, row) in enumerate(pd.read_csv(INPUT_CSV).iterrows(), start=1):
-            name = row["name"]
-            vh = row["vh"].upper()
-            vl = row["vl"].upper() if "vl" in row and pd.notna(row["vl"]) else ""
-            format_str = str(row["Format"]).lower()
 
-            format_type = get_format_type(format_str, MODE)
-            if not format_type:
-                continue
+        try:
+            df = pd.read_csv(INPUT_CSV)
+            print(f"[INFO] Loaded CSV with {len(df)} rows from {INPUT_CSV}")
+        except Exception as e:
+            print(f"[ERROR] Failed to read CSV file: {e}")
+            return
 
+        for sample_idx, (idx, row) in enumerate(df.iterrows(), start=1):
+            print(f"\n[DEBUG] Processing sample {sample_idx} — Row index: {idx}")
             try:
+                name = str(row["name"])
+                vh = str(row["vh"]).upper() if pd.notna(row["vh"]) else ""
+                vl = str(row["vl"]).upper() if "vl" in row and pd.notna(row["vl"]) else ""
+                format_str = str(row["Format"]).lower() if "Format" in row else "mab"
+
+                print(f"[DEBUG] name: {name}, vh: {vh[:10]}..., vl: {vl[:10]}..., format: {format_str}")
+
+                format_type = get_format_type(format_str, MODE)
+                if not format_type:
+                    print(f"[WARNING] Unknown format for sample {name}, skipping.")
+                    continue
+
                 if MODEL_TYPE == "antiberta":
                     handle_antiberta(vh, vl, format_type, name, OUTPUT, antiberty)
                 elif MODEL_TYPE == "ablang":
@@ -330,8 +394,10 @@ def main():
                         "tempro": ("worker_py/thermo_worker.py", "esm")
                     }
                     script_path, env = script_map[MODEL_TYPE]
-                    run_worker_script(name, vh, vl, format_type, "H" if format_type == "Nanobody" else "H,L", script_path, env)
-                    
+                    mutate_str = "H" if format_type == "Nanobody" else "H,L"
+                    extra_args = ["--log_likelihood_only"] if LOG_LIKELIHOOD_ONLY else []
+                    run_worker_script(name, vh, vl, format_type, mutate_str, script_path, env, extra_args)
+
                 elif MODEL_TYPE in ["antifold", "esm1f", "pyrosetta"]:
                     pdbfile = ensure_pdb_exists(name, vh, vl, format_type)
                     script_map = {
@@ -342,20 +408,27 @@ def main():
                     script_path, env = script_map[MODEL_TYPE]
                     vl_clean = vl if format_type == "VHVL" and vl not in ["", "NA", "na", None] else "NA"
                     mutate_str = "H" if format_type == "Nanobody" else "H,L"
-                    extra_args = ["--mutate", mutate_str,"--order", ORDER, "--nogpu"] if MODEL_TYPE in ["esm1f", "pyrosetta"] else []
+                    extra_args = ["--mutate", mutate_str, "--order", ORDER, "--nogpu"]
+                    if LOG_LIKELIHOOD_ONLY:
+                        extra_args.append("--log_likelihood_only")
                     run_worker_script(name, vh, vl_clean, format_type, mutate_str, script_path, env, extra_args)
-            
+
+            except KeyError as ke:
+                print(f"[ERROR] Missing expected column: {ke} in row {idx}")
+                continue
             except subprocess.CalledProcessError as e:
-                print(f"Worker script failed for {name}: {e}")
+                print(f"[ERROR] Worker script failed for {name}: {e}")
                 continue
             except Exception as e:
-                print(f"Failed on {name}: {e}")
+                print(f"[ERROR] Exception occurred for {name}: {e}")
+                traceback.print_exc()
                 continue
+
             finally:
-                # Clear memory and cache
-                print("Cleaning up after model run...")
+                print("[INFO] Cleaning up after model run...")
                 gc.collect()
                 torch.cuda.empty_cache()
 
 if __name__ == "__main__":
+    print(f"\nLog-likelihood-only mode is {'ON' if LOG_LIKELIHOOD_ONLY else 'OFF'}\n")
     main()

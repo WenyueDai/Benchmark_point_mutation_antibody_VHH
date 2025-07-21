@@ -1,0 +1,10 @@
+2025-07-21 20:13:07,838 [INFO] Starting ESM-IF1 scan on '1MLC_pdb_before_relax', mutating chains ['H', 'L']
+2025-07-21 20:13:07,839 [INFO] Loading ESM-IF1 model...
+2025-07-21 20:13:21,726 [INFO] Running on CPU.
+2025-07-21 20:13:21,729 [INFO] Parsing PDB structure from pdbs/1MLC_pdb_before_relax.pdb
+2025-07-21 20:13:21,877 [INFO] Loaded 2 chains: H, L
+2025-07-21 20:13:21,877 [INFO] Scoring wild-type complex and each chain's sequence...
+2025-07-21 20:13:26,061 [INFO] WT LL - Complex: -1.5964 | Chain H: -1.6040
+2025-07-21 20:13:29,448 [INFO] WT LL - Complex: -1.5964 | Chain L: -1.5894
+2025-07-21 20:13:29,448 [INFO] Skipping mutation scan. Writing wild-type log-likelihoods only...
+2025-07-21 20:13:29,475 [INFO] WT log-likelihood saved to results/esm1f/1MLC_pdb_before_relax_esm1f_likelihood_only.csv

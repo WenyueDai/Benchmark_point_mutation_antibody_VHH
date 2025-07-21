@@ -4236,3 +4236,4 @@ sample	chain	pos	wt	mt	wt_log_likelihood_ablang2	mut_log_likelihood_ablang2	delt
 1MLC_pdb_before_relax	L	107	K	Y	6.171903133392334	-8.184479713439941	-14.356382846832275
 1MLC_pdb_before_relax	L	107	K	W	6.171903133392334	-10.647692680358887	-16.81959581375122
 1MLC_pdb_before_relax	L	107	K	L	6.171903133392334	-6.777429103851318	-12.949332237243652
+1MLC_pdb_before_relax	-65837.3984375

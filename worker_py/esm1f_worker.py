@@ -51,6 +51,8 @@ def main():
     parser.add_argument('--order', default=None, help='Chain order override (e.g., H,M or H,L,M)')
     parser.add_argument('--nogpu', action='store_true', help='Disable GPU even if available')
     parser.add_argument('--format', type=str, help='Not used, for compatibility with other scripts')
+    parser.add_argument('--log_likelihood_only', action='store_true', help='Only compute WT log-likelihood, skip mutation scan')
+
     args = parser.parse_args()
 
     sample_name = args.sample_name
@@ -122,75 +124,93 @@ def main():
     if wt_ll_complex is None or not wt_ll_targets:
         logger.error("No valid wild-type log-likelihoods. Exiting.")
         sys.exit(1)
+        
+        # If only log-likelihood is requested, skip mutation scan and write results
+    if args.log_likelihood_only:
+        logger.info("Skipping mutation scan. Writing wild-type log-likelihoods only...")
 
-    logger.info("Beginning mutation scan...\n")
-    records = []
-    mut_counter = 0
+        df = pd.DataFrame([{
+            "sample": sample_name,
+            "log_likelihood_complex_esm1f": wt_ll_complex
+        }])
+        
+        out_path = os.path.join(ESM1F_OUTPUT_DIR, f"{sample_name}_esm1f_likelihood_only.csv")
+        df.to_csv(out_path, index=False)
+        logger.info(f"WT log-likelihood saved to {out_path}")
 
-    for chain_id in chains_to_mutate:
-        if chain_id not in native_seqs:
-            continue
+        logger.removeHandler(log_handler)
+        log_handler.close()
+        return
 
-        native_seq = native_seqs[chain_id]
-        logger.info(f"Mutating chain {chain_id}, length {len(native_seq)}")
+    else:
+        logger.info("Beginning mutation scan...\n")
+        records = []
+        mut_counter = 0
 
-        for i, wt in enumerate(native_seq):
-            if wt not in AAs:
-                logger.info(f"Skipping non-canonical residue '{wt}' at position {i+1}")
+        for chain_id in chains_to_mutate:
+            if chain_id not in native_seqs:
                 continue
 
-            for mt in AAs:
-                if mt == wt:
+            native_seq = native_seqs[chain_id]
+            logger.info(f"Mutating chain {chain_id}, length {len(native_seq)}")
+
+            for i, wt in enumerate(native_seq):
+                if wt not in AAs:
+                    logger.info(f"Skipping non-canonical residue '{wt}' at position {i+1}")
                     continue
 
-                mut_seq = native_seq[:i] + mt + native_seq[i+1:]
-                mutated_seqs = dict(native_seqs)
-                mutated_seqs[chain_id] = mut_seq
+                for mt in AAs:
+                    if mt == wt:
+                        continue
 
-                try:
-                    mut_ll_complex, mut_ll_target = score_sequence_in_complex(
-                        model, alphabet,
-                        coords_dict,
-                        mutated_seqs,
-                        target_chain_id=chain_id,
-                        target_seq=mut_seq,
-                        order=chain_order
-                    )
+                    mut_seq = native_seq[:i] + mt + native_seq[i+1:]
+                    mutated_seqs = dict(native_seqs)
+                    mutated_seqs[chain_id] = mut_seq
 
-                    delta_complex = mut_ll_complex - wt_ll_complex
-                    delta_target = mut_ll_target - wt_ll_targets[chain_id]
+                    try:
+                        mut_ll_complex, mut_ll_target = score_sequence_in_complex(
+                            model, alphabet,
+                            coords_dict,
+                            mutated_seqs,
+                            target_chain_id=chain_id,
+                            target_seq=mut_seq,
+                            order=chain_order
+                        )
 
-                    logger.info(
-                        f"{wt}{i+1}{mt} | ΔLL (complex): {delta_complex:.4f} | ΔLL (chain {chain_id}): {delta_target:.4f}"
-                    )
+                        delta_complex = mut_ll_complex - wt_ll_complex
+                        delta_target = mut_ll_target - wt_ll_targets[chain_id]
 
-                    records.append((
-                        sample_name, chain_id, i+1, wt, mt,
-                        delta_complex, delta_target,
-                        mut_ll_complex, mut_ll_target,
-                        wt_ll_complex, wt_ll_targets[chain_id]
-                    ))
-                    mut_counter += 1
+                        logger.info(
+                            f"{wt}{i+1}{mt} | ΔLL (complex): {delta_complex:.4f} | ΔLL (chain {chain_id}): {delta_target:.4f}"
+                        )
 
-                    if mut_counter % 100 == 0:
-                        logger.info(f"{mut_counter} mutations scored...")
+                        records.append((
+                            sample_name, chain_id, i+1, wt, mt,
+                            delta_complex, delta_target,
+                            mut_ll_complex, mut_ll_target,
+                            wt_ll_complex, wt_ll_targets[chain_id]
+                        ))
+                        mut_counter += 1
 
-                except Exception as e:
-                    logger.warning(f"Skipped {wt}{i+1}{mt} (chain {chain_id}): {e}")
-                    continue
+                        if mut_counter % 100 == 0:
+                            logger.info(f"{mut_counter} mutations scored...")
 
-    logger.info(f"Mutation scan complete: {mut_counter} mutations scored")
+                    except Exception as e:
+                        logger.warning(f"Skipped {wt}{i+1}{mt} (chain {chain_id}): {e}")
+                        continue
 
-    # Save results
-    df = pd.DataFrame(records, columns=[
-        "sample", "chain", "pos", "wt", "mt",
-        "delta_log_likelihood_complex_esm1f", "delta_log_likelihood_target_esm1f",
-        "mt_log_likelihood_complex_esm1f", "mt_log_likelihood_target_esm1f",
-        "wt_log_likelihood_complex_esm1f", "wt_log_likelihood_target_esm1f"
-    ])
-    out_path = os.path.join(ESM1F_OUTPUT_DIR, f"{sample_name}_esm1f_complex_tidy.csv")
-    df.to_csv(out_path, index=False)
-    logger.info(f"Results saved to {out_path}")
+        logger.info(f"Mutation scan complete: {mut_counter} mutations scored")
+
+        # Save results
+        df = pd.DataFrame(records, columns=[
+            "sample", "chain", "pos", "wt", "mt",
+            "delta_log_likelihood_complex_esm1f", "delta_log_likelihood_target_esm1f",
+            "mt_log_likelihood_complex_esm1f", "mt_log_likelihood_target_esm1f",
+            "wt_log_likelihood_complex_esm1f", "wt_log_likelihood_target_esm1f"
+        ])
+        out_path = os.path.join(ESM1F_OUTPUT_DIR, f"{sample_name}_esm1f_complex_tidy.csv")
+        df.to_csv(out_path, index=False)
+        logger.info(f"Results saved to {out_path}")
 
     # Cleanup logging
     logger.removeHandler(log_handler)
