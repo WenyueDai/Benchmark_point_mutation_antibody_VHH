@@ -60,9 +60,9 @@ This benchmark evaluates the ability of various computational models to predict 
 
 | Model         | Correlation (Estimate) | Observations                        |
 | ------------- | ---------------------- | ----------------------------------- |
-| **ESM-1f**    | ~0.5-0.6               | Strongest alignment with experiment |
-| **Antifold**  | ~0.4-0.5               | Moderate alignment                  |
-| **Ablang2**   | ~0.3-0.4               | Limited alignment                   |
+| **ESM-1f**    | ~0.4-0.45               | Moderate alignment with experiment |
+| **Antifold**  | ~0.44-0.49               | Moderate alignment with experiment (best)   |
+| **Ablang2**   | ~0.46               | Moderate alignment with experiment                   |
 | **PyRosetta** | < 0.2                  | Poor correlation with DMS data      |
 
 Structural relaxation (before vs. after FastRelax) had minimal effect on correlation across all models.
